@@ -1,3 +1,5 @@
+import './style.css';
+
 import Phaser from 'phaser';
 
 import BattleScene from 'gate/scenes/battle';
