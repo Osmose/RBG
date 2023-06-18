@@ -1,0 +1,15 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  background: black;
+  color: white;
+  font-family: Helvetica,Sans-serif;
+  text-align: center;
+}
+
+canvas {
+  margin-top: 20px;
+  background: white;
+}
