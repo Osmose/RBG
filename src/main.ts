@@ -15,7 +15,7 @@ window.addEventListener('load', () => {
     type: Phaser.AUTO,
     height: 240,
     width: 380,
-    zoom: 2,
+    zoom: 3,
     backgroundColor: '#000',
     parent: 'game',
     render: {
