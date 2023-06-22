@@ -1,3 +1,25 @@
+export enum Direction {
+  Up = Phaser.UP,
+  Down = Phaser.DOWN,
+  Left = Phaser.LEFT,
+  Right = Phaser.RIGHT,
+}
+
+export const DIRECTIONS = [Direction.Up, Direction.Down, Direction.Left, Direction.Right];
+
+export function oppositeDir(direction: Direction): Direction {
+  switch (direction) {
+    case Direction.Left:
+      return Direction.Right;
+    case Direction.Right:
+      return Direction.Left;
+    case Direction.Up:
+      return Direction.Down;
+    case Direction.Down:
+      return Direction.Up;
+  }
+}
+
 /**
  * Returns the number of pixels to move something at a rate of pixelsPerSecond
  * over a period of delta milliseconds.
@@ -6,6 +28,7 @@ export function pixelDiff(pixelsPerSecond: number, deltaMs: number): number {
   return pixelsPerSecond * (deltaMs / 1000);
 }
 
+/** Choose a single value from the given list randomly and return it. */
 export function randomChoice<T>(list: T[]): T {
   const index = Math.floor(Math.random() * list.length);
   return list[index];
@@ -53,16 +76,16 @@ export class StateMachine {
     }
   }
 
-  transition(newState: string, ...enterArgs: any[]) {
+  async transition(newState: string, ...enterArgs: any[]) {
     if (!(newState in this.possibleStates)) {
       throw Error(`Invalid state ${newState}`);
     }
 
     if (this.state) {
-      this.possibleStates[this.state].handleExited(...this.stateArgs);
+      await this.possibleStates[this.state].handleExited(...this.stateArgs);
     }
     this.state = newState;
-    this.possibleStates[this.state].handleEntered(...this.stateArgs, ...enterArgs);
+    await this.possibleStates[this.state].handleEntered(...this.stateArgs, ...enterArgs);
   }
 }
 
@@ -71,9 +94,9 @@ export class State {
 
   init(..._args: any[]) {}
 
-  handleEntered(..._args: any[]) {}
+  handleEntered(..._args: any[]): void | Promise<any> {}
 
-  handleExited(..._args: any[]) {}
+  handleExited(..._args: any[]): void | Promise<any> {}
 
   execute(..._args: any[]): string | null | undefined | void {
     return null;
@@ -114,4 +137,19 @@ export function justDown(key: Phaser.Input.Keyboard.Key & JustDownKey, repeatDel
   }
 
   return false;
+}
+
+/** Wait for duration milliseconds and resolve the returned Promise. */
+export function wait(scene: Phaser.Scene, duration: number) {
+  return new Promise((resolve) => {
+    scene.time.delayedCall(duration, resolve);
+  });
+}
+
+/** Play an animation and resolve the returned promise once it completes. */
+export function asyncAnimation(sprite: Phaser.GameObjects.Sprite, key: string) {
+  return new Promise((resolve) => {
+    sprite.once('animationcomplete', resolve);
+    sprite.play(key);
+  });
 }
