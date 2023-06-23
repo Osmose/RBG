@@ -298,11 +298,6 @@ class SwapState extends State {
   }
 }
 
-interface SolveGroup {
-  type: SphereType;
-  spheres: Sphere[];
-}
-
 function findGroup(scene: BattleScene, sphere: Sphere, visited: Set<number>, group: Sphere[]) {
   for (const direction of DIRECTIONS) {
     const [x, y] = gridMove(sphere.gridX, sphere.gridY, direction);
