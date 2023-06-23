@@ -4,10 +4,12 @@ import {
   State,
   StateMachine,
   asyncAnimation,
+  gridMove,
   justDown,
   oppositeDir,
   pixelDiff,
   randomChoice,
+  wait,
 } from 'gate/util';
 import Phaser from 'phaser';
 
@@ -62,6 +64,7 @@ export default class BattleScene extends Phaser.Scene {
         movePhase: new MovePhaseState(),
         swapChoice: new SwapChoiceState(),
         swap: new SwapState(),
+        solve: new SolveState(),
       },
       [this]
     );
@@ -77,6 +80,10 @@ export default class BattleScene extends Phaser.Scene {
   }
 
   getSphere(gridX: number, gridY: number) {
+    if (gridX < 0 || gridX >= GRID_WIDTH || gridY < 0 || gridY >= GRID_HEIGHT) {
+      return null;
+    }
+
     return this.spheres[gridY * GRID_WIDTH + gridX];
   }
 }
@@ -101,6 +108,7 @@ class Sphere {
   scene: BattleScene;
   gridX: number;
   gridY: number;
+  index: number;
   type: SphereType;
   sprite: Phaser.GameObjects.Sprite;
 
@@ -126,6 +134,12 @@ class Sphere {
           }),
         });
       }
+
+      scene.anims.create({
+        key: `sphereClear:${type}`,
+        frameRate: 10,
+        frames: scene.anims.generateFrameNumbers('battleSpheres', { frames: [type + 48, 52, 13, 21, 29] }),
+      });
     }
   }
 
@@ -133,6 +147,7 @@ class Sphere {
     this.scene = scene;
     this.gridX = gridX;
     this.gridY = gridY;
+    this.index = gridX + gridY * GRID_WIDTH;
     this.type = type;
     this.sprite = scene.add.sprite(gridX * 14 + 66 + 7, gridY * 14 + 50 + 7, 'battleSpheres', type);
   }
@@ -185,6 +200,9 @@ class MovePhaseState extends State {
     if (justDown(scene.keys.space)) {
       return this.transition('swapChoice', this.cursorX, this.cursorY);
     }
+    if (justDown(scene.keys.shift)) {
+      return this.transition('solve');
+    }
 
     if (justDown(scene.keys.right, 500) && this.cursorX < GRID_WIDTH - 1) {
       this.moveCursor(1, 0);
@@ -213,7 +231,7 @@ class SwapChoiceState extends State {
   handleEntered(scene: BattleScene, fromX: number, fromY: number) {
     this.fromX = fromX;
     this.fromY = fromY;
-    this.fromSphere = scene.getSphere(fromX, fromY);
+    this.fromSphere = scene.getSphere(fromX, fromY)!;
     this.fromSphere.select();
   }
 
@@ -264,8 +282,8 @@ class SwapState extends State {
         break;
     }
 
-    const fromSphere = scene.getSphere(fromX, fromY);
-    const toSphere = scene.getSphere(toX, toY);
+    const fromSphere = scene.getSphere(fromX, fromY)!;
+    const toSphere = scene.getSphere(toX, toY)!;
     const fromType = fromSphere.type;
     const toType = toSphere.type;
     await Promise.all([
@@ -277,5 +295,59 @@ class SwapState extends State {
     toSphere.setType(fromType);
 
     this.transition('movePhase', toX, toY);
+  }
+}
+
+interface SolveGroup {
+  type: SphereType;
+  spheres: Sphere[];
+}
+
+function findGroup(scene: BattleScene, sphere: Sphere, visited: Set<number>, group: Sphere[]) {
+  for (const direction of DIRECTIONS) {
+    const [x, y] = gridMove(sphere.gridX, sphere.gridY, direction);
+    const checkSphere = scene.getSphere(x, y);
+    if (checkSphere && !visited.has(checkSphere.index) && sphere.type === checkSphere.type) {
+      group.push(checkSphere);
+      visited.add(checkSphere.index);
+      findGroup(scene, checkSphere, visited, group);
+    }
+  }
+
+  return group;
+}
+
+class SolveState extends State {
+  async handleEntered(scene: BattleScene) {
+    const visited = new Set<number>();
+    const groups: Sphere[][] = [];
+    for (const sphere of scene.spheres) {
+      if (visited.has(sphere.index)) {
+        continue;
+      }
+      visited.add(sphere.index);
+      groups.push(findGroup(scene, sphere, visited, [sphere]));
+    }
+
+    const matchGroups = groups.filter((group) => group.length >= 3);
+    const matchedByType: Map<SphereType, Sphere[]> = new Map();
+    for (const type of SPHERE_TYPES) {
+      const spheres = matchGroups.filter((group) => group[0].type === type).flat();
+      if (spheres.length > 0) {
+        matchedByType.set(type, spheres);
+      }
+    }
+
+    const animations: Promise<void>[] = [];
+    for (const [type, spheres] of matchedByType.entries()) {
+      for (const sphere of spheres) {
+        animations.push(asyncAnimation(sphere.sprite, `sphereClear:${type}`));
+      }
+      await wait(scene, 100);
+    }
+
+    await Promise.all(animations);
+
+    return this.transition('movePhase');
   }
 }

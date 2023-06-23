@@ -20,6 +20,19 @@ export function oppositeDir(direction: Direction): Direction {
   }
 }
 
+export function gridMove(x: number, y: number, direction: Direction) {
+  switch (direction) {
+    case Direction.Left:
+      return [x - 1, y];
+    case Direction.Right:
+      return [x + 1, y];
+    case Direction.Up:
+      return [x, y - 1];
+    case Direction.Down:
+      return [x, y + 1];
+  }
+}
+
 /**
  * Returns the number of pixels to move something at a rate of pixelsPerSecond
  * over a period of delta milliseconds.
@@ -147,7 +160,7 @@ export function wait(scene: Phaser.Scene, duration: number) {
 }
 
 /** Play an animation and resolve the returned promise once it completes. */
-export function asyncAnimation(sprite: Phaser.GameObjects.Sprite, key: string) {
+export function asyncAnimation(sprite: Phaser.GameObjects.Sprite, key: string): Promise<void> {
   return new Promise((resolve) => {
     sprite.once('animationcomplete', resolve);
     sprite.play(key);
