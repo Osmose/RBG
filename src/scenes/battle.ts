@@ -109,8 +109,10 @@ class Sphere {
   gridX: number;
   gridY: number;
   index: number;
-  type: SphereType;
+  type: SphereType | null;
   sprite: Phaser.GameObjects.Sprite;
+
+  static EMPTY_FRAME = 29;
 
   static preload(scene: BattleScene) {
     scene.load.spritesheet('battleSpheres', 'ui/spheres.png', { frameWidth: 14, frameHeight: 14 });
@@ -118,6 +120,7 @@ class Sphere {
 
   static create(scene: BattleScene) {
     for (const type of SPHERE_TYPES) {
+      // Swaps
       for (const direction of DIRECTIONS) {
         scene.anims.create({
           key: `sphereSwapFrom:${type}:${direction}`,
@@ -135,10 +138,52 @@ class Sphere {
         });
       }
 
+      // Clear
       scene.anims.create({
         key: `sphereClear:${type}`,
         frameRate: 10,
-        frames: scene.anims.generateFrameNumbers('battleSpheres', { frames: [type + 48, 52, 13, 21, 29] }),
+        frames: scene.anims.generateFrameNumbers('battleSpheres', {
+          frames: [type + 48, 52, 13, 21, Sphere.EMPTY_FRAME],
+        }),
+      });
+
+      // Refill
+      for (const refillFromType of SPHERE_TYPES) {
+        scene.anims.create({
+          key: `sphereRefillTop:${refillFromType}:${type}`,
+          frameRate: 10,
+          frames: scene.anims.generateFrameNumbers('battleSpheres', {
+            frames: [refillFromType + 56, 37, type + 8, type],
+          }),
+        });
+        scene.anims.create({
+          key: `sphereRefillMiddle:${refillFromType}:${type}`,
+          frameRate: 10,
+          frames: scene.anims.generateFrameNumbers('battleSpheres', {
+            frames: [refillFromType + 56, 45, type + 8, type],
+          }),
+        });
+      }
+
+      // Refill empty
+      scene.anims.create({
+        key: `sphereRefillTop:${null}:${type}`,
+        frameRate: 10,
+        frames: scene.anims.generateFrameNumbers('battleSpheres', {
+          frames: [Sphere.EMPTY_FRAME, 37, type + 8, type],
+        }),
+      });
+      scene.anims.create({
+        key: `sphereRefillMiddle:${null}:${type}`,
+        frameRate: 10,
+        frames: scene.anims.generateFrameNumbers('battleSpheres', { frames: [Sphere.EMPTY_FRAME, 45, type + 8, type] }),
+      });
+      scene.anims.create({
+        key: `sphereRefillBottom:${null}:${type}`,
+        frameRate: 10,
+        frames: scene.anims.generateFrameNumbers('battleSpheres', {
+          frames: [Sphere.EMPTY_FRAME, type + 64, type + 8, type],
+        }),
       });
     }
   }
@@ -153,16 +198,15 @@ class Sphere {
   }
 
   select() {
-    this.sprite.setFrame(this.type + 8);
+    if (this.type !== null) {
+      this.sprite.setFrame(this.type + 8);
+    }
   }
 
   deselect() {
-    this.sprite.setFrame(this.type);
-  }
-
-  setType(type: SphereType) {
-    this.type = type;
-    this.sprite.setFrame(type);
+    if (this.type !== null) {
+      this.sprite.setFrame(this.type);
+    }
   }
 }
 
@@ -291,8 +335,8 @@ class SwapState extends State {
       asyncAnimation(toSphere.sprite, `sphereSwapTo:${fromType}:${direction}`),
     ]);
 
-    fromSphere.setType(toType);
-    toSphere.setType(fromType);
+    fromSphere.type = toType;
+    toSphere.type = fromType;
 
     this.transition('movePhase', toX, toY);
   }
@@ -314,6 +358,7 @@ function findGroup(scene: BattleScene, sphere: Sphere, visited: Set<number>, gro
 
 class SolveState extends State {
   async handleEntered(scene: BattleScene) {
+    // Find all matched groups
     const visited = new Set<number>();
     const groups: Sphere[][] = [];
     for (const sphere of scene.spheres) {
@@ -324,6 +369,7 @@ class SolveState extends State {
       groups.push(findGroup(scene, sphere, visited, [sphere]));
     }
 
+    // Group matches by type
     const matchGroups = groups.filter((group) => group.length >= 3);
     const matchedByType: Map<SphereType, Sphere[]> = new Map();
     for (const type of SPHERE_TYPES) {
@@ -333,15 +379,59 @@ class SolveState extends State {
       }
     }
 
-    const animations: Promise<void>[] = [];
+    // Clear spheres
+    const clearAnimations: Promise<void>[] = [];
     for (const [type, spheres] of matchedByType.entries()) {
       for (const sphere of spheres) {
-        animations.push(asyncAnimation(sphere.sprite, `sphereClear:${type}`));
+        clearAnimations.push(asyncAnimation(sphere.sprite, `sphereClear:${type}`));
       }
       await wait(scene, 100);
     }
+    await Promise.all(clearAnimations);
+    for (const sphere of matchGroups.flat()) {
+      sphere.type = null;
+    }
 
-    await Promise.all(animations);
+    // Collapse each column and fill in new spheres
+    const refillAnimations: Promise<void>[] = [];
+    for (let x = 0; x < GRID_WIDTH; x++) {
+      const oldColumnTypes: (SphereType | null)[] = [];
+      for (let y = 0; y < GRID_HEIGHT; y++) {
+        oldColumnTypes.push(scene.getSphere(x, y)!.type);
+      }
+
+      // Early exit if nothing changed
+      if (!oldColumnTypes.some((type) => type === null)) {
+        continue;
+      }
+
+      let newColumnTypes: (SphereType | null)[] = oldColumnTypes.filter((type) => type !== null);
+      newColumnTypes = [...Array(GRID_HEIGHT - newColumnTypes.length).fill(null), ...newColumnTypes];
+      newColumnTypes = newColumnTypes.map((type) => type ?? randomChoice(SPHERE_TYPES));
+
+      const animEnd = oldColumnTypes.findLastIndex((type) => type === null);
+      for (let y = 0; y <= animEnd; y++) {
+        const oldType = oldColumnTypes[y];
+        const newType = newColumnTypes[y];
+
+        const sphere = scene.getSphere(x, y)!;
+        sphere.type = newType;
+
+        let refillAnimationKey = 'sphereRefillMiddle';
+        if (y === 0) {
+          refillAnimationKey = 'sphereRefillTop';
+        } else if (y === animEnd) {
+          refillAnimationKey = 'sphereRefillBottom';
+        }
+        refillAnimations.push(asyncAnimation(sphere.sprite, `${refillAnimationKey}:${oldType}:${newType}`));
+      }
+    }
+    await Promise.all(refillAnimations);
+
+    // DEBUG: Reset in case the visuals don't match
+    for (const sphere of scene.spheres) {
+      sphere.sprite.setFrame(sphere.type ?? Sphere.EMPTY_FRAME);
+    }
 
     return this.transition('movePhase');
   }
