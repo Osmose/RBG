@@ -11,12 +11,14 @@
     "prepare": "husky install"
   },
   "devDependencies": {
+    "@types/lodash.invert": "^4.3.7",
     "gh-pages": "^5.0.0",
+    "husky": "^8.0.0",
     "typescript": "^5.0.2",
-    "vite": "^4.3.9",
-    "husky": "^8.0.0"
+    "vite": "^4.3.9"
   },
   "dependencies": {
+    "lodash.invert": "^4.3.0",
     "phaser": "^3.60.0"
   }
 }

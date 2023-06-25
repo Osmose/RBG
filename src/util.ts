@@ -166,3 +166,25 @@ export function asyncAnimation(sprite: Phaser.GameObjects.Sprite, key: string): 
     sprite.play(key);
   });
 }
+
+interface TweenPromise extends Promise<void> {
+  tween: Phaser.Tweens.Tween;
+}
+
+/** Execute a tween and resolve the returned promise once it completes */
+export function asyncTween(scene: Phaser.Scene, config: Phaser.Types.Tweens.TweenBuilderConfig): Promise<void> {
+  let tween: Phaser.Tweens.Tween | null = null;
+  const promise: TweenPromise = new Promise<void>((resolve) => {
+    tween = scene.add.tween({
+      ...config,
+      onComplete(...args) {
+        if (config.onComplete) {
+          config.onComplete(...args);
+        }
+        resolve();
+      },
+    });
+  }) as TweenPromise;
+  promise.tween = tween!;
+  return promise;
+}

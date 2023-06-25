@@ -4,6 +4,7 @@ import {
   State,
   StateMachine,
   asyncAnimation,
+  asyncTween,
   gridMove,
   justDown,
   oppositeDir,
@@ -11,10 +12,16 @@ import {
   randomChoice,
   wait,
 } from 'gate/util';
+import Text from 'gate/text';
 import Phaser from 'phaser';
 
 const GRID_WIDTH = 8;
 const GRID_HEIGHT = 9;
+
+const SPHERE_WINDOW_LEFT = 64;
+const SPHERE_WINDOW_TOP = 40;
+const SPHERE_STOCK_LEFT = 70;
+const SPHERE_STOCK_TOP = 172;
 
 export default class BattleScene extends Phaser.Scene {
   keys!: Phaser.Types.Input.Keyboard.CursorKeys;
@@ -25,6 +32,10 @@ export default class BattleScene extends Phaser.Scene {
   battleBorder!: Phaser.GameObjects.Image;
   battleGrid!: Phaser.GameObjects.TileSprite;
   battleSphereWindow!: Phaser.GameObjects.Image;
+  battleSphereStock!: Phaser.GameObjects.Image;
+
+  // Battle state
+  stockCounts!: StockCount[];
   spheres!: Sphere[];
 
   constructor() {
@@ -35,10 +46,13 @@ export default class BattleScene extends Phaser.Scene {
 
   preload() {
     Sphere.preload(this);
+    Text.preload(this);
+    StockCount.preload(this);
 
     this.load.image('battleBorder', 'ui/battle_border.png');
     this.load.image('battleGrid', 'ui/battle_grid.png');
     this.load.image('battleSphereWindow', 'ui/battle_sphere_window.png');
+    this.load.image('battleSphereStock', 'ui/color_stock.png');
   }
 
   create() {
@@ -49,13 +63,19 @@ export default class BattleScene extends Phaser.Scene {
 
     this.battleGrid = this.add.tileSprite(196, 114, 326, 104, 'battleGrid');
     this.battleBorder = this.add.image(190, 120, 'battleBorder');
-    this.battleSphereWindow = this.add.image(64 + 58, 48 + 65, 'battleSphereWindow');
+    this.battleSphereWindow = this.add.image(SPHERE_WINDOW_LEFT + 58, SPHERE_WINDOW_TOP + 65, 'battleSphereWindow');
+    this.battleSphereStock = this.add.image(SPHERE_STOCK_LEFT + 46, SPHERE_STOCK_TOP + 16, 'battleSphereStock');
 
     this.spheres = [];
     for (let y = 0; y < GRID_HEIGHT; y++) {
       for (let x = 0; x < GRID_WIDTH; x++) {
         this.spheres.push(new Sphere(this, x, y, randomChoice(SPHERE_TYPES)));
       }
+    }
+
+    this.stockCounts = [];
+    for (const type of SPHERE_TYPES) {
+      this.stockCounts.push(new StockCount(this, type));
     }
 
     this.stateMachine = new StateMachine(
@@ -194,7 +214,12 @@ class Sphere {
     this.gridY = gridY;
     this.index = gridX + gridY * GRID_WIDTH;
     this.type = type;
-    this.sprite = scene.add.sprite(gridX * 14 + 66 + 7, gridY * 14 + 50 + 7, 'battleSpheres', type);
+    this.sprite = scene.add.sprite(
+      gridX * 14 + SPHERE_WINDOW_LEFT + 9,
+      gridY * 14 + SPHERE_WINDOW_TOP + 9,
+      'battleSpheres',
+      type
+    );
   }
 
   select() {
@@ -210,22 +235,78 @@ class Sphere {
   }
 }
 
+class StockCount {
+  scene: BattleScene;
+  bar: Phaser.GameObjects.Image;
+  mask: Phaser.GameObjects.Rectangle;
+  text: Text;
+  count: number;
+
+  static preload(scene: BattleScene) {
+    scene.load.spritesheet('sphereStockBar', 'ui/stock_bar.png', { frameWidth: 80, frameHeight: 4 });
+  }
+
+  constructor(scene: BattleScene, type: SphereType) {
+    this.scene = scene;
+    this.bar = scene.add.image(SPHERE_STOCK_LEFT + 11 + 40, SPHERE_STOCK_TOP + 4 + 6 * type, 'sphereStockBar', type);
+    this.mask = scene.add.rectangle(this.bar.x + 40, this.bar.y, 80, 4, 0x000000);
+    this.mask.setOrigin(1, 0.5);
+    this.text = new Text(scene, SPHERE_STOCK_LEFT + 94, SPHERE_STOCK_TOP + 1 + 6 * type, 2, 1, '0', { tint: 0xfffa9b });
+
+    this.count = 4;
+    this.setCount(0);
+  }
+
+  modCount(count: number) {
+    this.setCount(this.count + count);
+  }
+
+  setCount(count: number) {
+    this.count = Math.min(count, 40);
+    this.mask.setDisplaySize((40 - count) * 2, 4);
+    this.text.setText(`${count}`);
+  }
+
+  async animateModCount(count: number) {
+    const newCount = Math.min(this.count + count, 40);
+    await Promise.all([
+      asyncTween(this.scene, {
+        targets: [this.mask],
+        displayWidth: (40 - newCount) * 2,
+        duration: 400,
+      }),
+      (async () => {
+        await wait(this.scene, 300);
+        this.text.setTint(0x3f3e47);
+        await wait(this.scene, 100);
+        this.text.setText(`${newCount}`);
+        await wait(this.scene, 100);
+        this.text.setTint(0xfffa9b);
+      })(),
+    ]);
+
+    this.count = newCount;
+  }
+}
+
 class MovePhaseState extends State {
   cursor!: Phaser.GameObjects.Sprite;
   cursorX!: number;
   cursorY!: number;
 
   init(scene: BattleScene) {
-    this.cursor = scene.add.sprite(66 + 7, 50 + 7, 'battleSpheres', 5);
+    this.cursor = scene.add.sprite(0, 0, 'battleSpheres', 5);
     this.cursorX = 0;
     this.cursorY = 0;
     this.cursor.setVisible(false);
+
+    this.setCursorPos(0, 0);
   }
 
   setCursorPos(x: number, y: number) {
     this.cursorX = x;
     this.cursorY = y;
-    this.cursor.setPosition(66 + 7 + x * 14, 50 + 7 + y * 14);
+    this.cursor.setPosition(SPHERE_WINDOW_LEFT + 9 + x * 14, SPHERE_WINDOW_TOP + 9 + y * 14);
   }
 
   moveCursor(xDiff: number, yDiff: number) {
@@ -385,6 +466,7 @@ class SolveState extends State {
       for (const sphere of spheres) {
         clearAnimations.push(asyncAnimation(sphere.sprite, `sphereClear:${type}`));
       }
+      clearAnimations.push(scene.stockCounts[type].animateModCount(spheres.length));
       await wait(scene, 100);
     }
     await Promise.all(clearAnimations);
