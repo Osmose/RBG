@@ -34,6 +34,10 @@ export default class BattleScene extends Phaser.Scene {
   battleSphereWindow!: Phaser.GameObjects.Image;
   battleSphereStock!: Phaser.GameObjects.Image;
 
+  // Sound
+  soundSwap!: Phaser.Sound.BaseSound;
+  soundClear!: Phaser.Sound.BaseSound;
+
   // Battle state
   stockCounts!: StockCount[];
   spheres!: Sphere[];
@@ -53,6 +57,9 @@ export default class BattleScene extends Phaser.Scene {
     this.load.image('battleGrid', 'ui/battle_grid.png');
     this.load.image('battleSphereWindow', 'ui/battle_sphere_window.png');
     this.load.image('battleSphereStock', 'ui/color_stock.png');
+
+    this.load.audio('swap', 'audio/swap.wav');
+    this.load.audio('clear', 'audio/clear.mp3');
   }
 
   create() {
@@ -65,6 +72,9 @@ export default class BattleScene extends Phaser.Scene {
     this.battleBorder = this.add.image(190, 120, 'battleBorder');
     this.battleSphereWindow = this.add.image(SPHERE_WINDOW_LEFT + 58, SPHERE_WINDOW_TOP + 65, 'battleSphereWindow');
     this.battleSphereStock = this.add.image(SPHERE_STOCK_LEFT + 46, SPHERE_STOCK_TOP + 16, 'battleSphereStock');
+
+    this.soundSwap = this.sound.add('swap');
+    this.soundClear = this.sound.add('clear');
 
     this.spheres = [];
     for (let y = 0; y < GRID_HEIGHT; y++) {
@@ -313,11 +323,15 @@ class MovePhaseState extends State {
     this.setCursorPos(this.cursorX + xDiff, this.cursorY + yDiff);
   }
 
-  handleEntered(_scene: BattleScene, toX?: number, toY?: number) {
+  handleEntered(scene: BattleScene, toX?: number, toY?: number) {
     this.cursor.setVisible(true);
 
     if (toX !== undefined && toY !== undefined) {
       this.setCursorPos(toX, toY);
+    }
+
+    if (scene.keys.space.isDown) {
+      return this.transition('swapChoice', this.cursorX, this.cursorY);
     }
   }
 
@@ -411,6 +425,8 @@ class SwapState extends State {
     const toSphere = scene.getSphere(toX, toY)!;
     const fromType = fromSphere.type;
     const toType = toSphere.type;
+
+    scene.soundSwap.play();
     await Promise.all([
       asyncAnimation(fromSphere.sprite, `sphereSwapFrom:${toType}:${direction}`),
       asyncAnimation(toSphere.sprite, `sphereSwapTo:${fromType}:${direction}`),
@@ -418,6 +434,9 @@ class SwapState extends State {
 
     fromSphere.type = toType;
     toSphere.type = fromType;
+
+    fromSphere.deselect();
+    toSphere.deselect();
 
     this.transition('movePhase', toX, toY);
   }
@@ -459,6 +478,14 @@ class SolveState extends State {
         matchedByType.set(type, spheres);
       }
     }
+
+    // If no matches, exit early
+    if (matchGroups.flat().length < 1) {
+      return this.transition('movePhase');
+    }
+
+    // Clearing audio
+    scene.soundClear.play();
 
     // Clear spheres
     const clearAnimations: Promise<void>[] = [];
