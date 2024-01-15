@@ -34,6 +34,14 @@ export default class BattleScene extends Phaser.Scene {
   battleSphereWindow!: Phaser.GameObjects.Image;
   battleSphereStock!: Phaser.GameObjects.Image;
 
+  // Enemies
+  enemySkelly!: Skelly;
+
+  // Party
+  partyRojo!: PartyMember;
+  partyBlue!: PartyMember;
+  partyMidori!: PartyMember;
+
   // Sound
   soundSwap!: Phaser.Sound.BaseSound;
   soundClear!: Phaser.Sound.BaseSound;
@@ -52,6 +60,8 @@ export default class BattleScene extends Phaser.Scene {
     Sphere.preload(this);
     Text.preload(this);
     StockCount.preload(this);
+    Skelly.preload(this);
+    PartyMember.preload(this);
 
     this.load.image('battleBorder', 'ui/battle_border.png');
     this.load.image('battleGrid', 'ui/battle_grid.png');
@@ -64,6 +74,8 @@ export default class BattleScene extends Phaser.Scene {
 
   create() {
     Sphere.create(this);
+    Skelly.create(this);
+    PartyMember.create(this);
 
     // Keyboard
     this.keys = this.input.keyboard!.createCursorKeys();
@@ -87,6 +99,11 @@ export default class BattleScene extends Phaser.Scene {
     for (const type of SPHERE_TYPES) {
       this.stockCounts.push(new StockCount(this, type));
     }
+
+    this.enemySkelly = new Skelly(this, 275 + 32, 85 + 32);
+    this.partyRojo = new PartyMember(this, Characters.Rojo, 210 + 16, 67 + 16);
+    this.partyBlue = new PartyMember(this, Characters.Blue, 194 + 16, 99 + 16);
+    this.partyMidori = new PartyMember(this, Characters.Midori, 210 + 16, 131 + 16);
 
     this.stateMachine = new StateMachine(
       'movePhase',
@@ -115,6 +132,75 @@ export default class BattleScene extends Phaser.Scene {
     }
 
     return this.spheres[gridY * GRID_WIDTH + gridX];
+  }
+}
+
+class Skelly {
+  scene: Phaser.Scene;
+  sprite: Phaser.GameObjects.Sprite;
+  ground: Phaser.GameObjects.Image;
+
+  static preload(scene: BattleScene) {
+    scene.load.spritesheet('enemySkelly', 'enemies/skelly.png', { frameWidth: 64, frameHeight: 64 });
+    scene.load.image('enemySkellyGround', 'enemies/skelly_ground.png');
+  }
+
+  static create(scene: BattleScene) {
+    scene.anims.create({
+      key: 'enemySkellyIdle',
+      frameRate: 5,
+      frames: scene.anims.generateFrameNumbers('enemySkelly', { start: 0, end: 3 }),
+      repeat: -1,
+    });
+  }
+
+  constructor(scene: BattleScene, x: number, y: number) {
+    this.scene = scene;
+    this.ground = scene.add.image(x - 6, y + 23, 'enemySkellyGround');
+    this.sprite = scene.add.sprite(x, y, 'enemySkellyIdle', 0);
+    this.sprite.play('enemySkellyIdle');
+  }
+}
+
+enum Characters {
+  Rojo = 'rojo',
+  Blue = 'blue',
+  Midori = 'midori',
+}
+
+class PartyMember {
+  scene: Phaser.Scene;
+  character: Characters;
+  sprite: Phaser.GameObjects.Sprite;
+  ground: Phaser.GameObjects.Image;
+
+  static preload(scene: BattleScene) {
+    for (const character of Object.values(Characters)) {
+      scene.load.spritesheet(`party[${character}]`, `party/${character}.png`, {
+        frameWidth: 32,
+        frameHeight: 32,
+      });
+      scene.load.image(`party[${character}]Ground`, `party/${character}_ground.png`);
+    }
+  }
+
+  static create(scene: BattleScene) {
+    for (const character of Object.values(Characters)) {
+      scene.anims.create({
+        key: `party[${character}]Idle`,
+        frameRate: 5,
+        frames: scene.anims.generateFrameNumbers(`party[${character}]`, { start: 0, end: 3 }),
+        repeat: -1,
+      });
+    }
+  }
+
+  constructor(scene: BattleScene, character: Characters, x: number, y: number) {
+    this.scene = scene;
+    this.character = character;
+    this.ground = scene.add.image(x - 1, y + 14, `party[${character}]Ground`);
+    this.sprite = scene.add.sprite(x, y, `party[${character}]`, 0);
+    this.sprite.play(`party[${character}]Idle`);
   }
 }
 
