@@ -42,6 +42,11 @@ export default class BattleScene extends Phaser.Scene {
   partyBlue!: PartyMember;
   partyMidori!: PartyMember;
 
+  // Health bars
+  healthRojo!: PartyHealthBar;
+  healthBlue!: PartyHealthBar;
+  healthMidori!: PartyHealthBar;
+
   // Sound
   soundSwap!: Phaser.Sound.BaseSound;
   soundClear!: Phaser.Sound.BaseSound;
@@ -62,6 +67,7 @@ export default class BattleScene extends Phaser.Scene {
     StockCount.preload(this);
     Skelly.preload(this);
     PartyMember.preload(this);
+    PartyHealthBar.preload(this);
 
     this.load.image('battleBorder', 'ui/battle_border.png');
     this.load.image('battleGrid', 'ui/battle_grid.png');
@@ -104,6 +110,9 @@ export default class BattleScene extends Phaser.Scene {
     this.partyRojo = new PartyMember(this, Characters.Rojo, 210 + 16, 67 + 16);
     this.partyBlue = new PartyMember(this, Characters.Blue, 194 + 16, 99 + 16);
     this.partyMidori = new PartyMember(this, Characters.Midori, 210 + 16, 131 + 16);
+    this.healthRojo = new PartyHealthBar(this, Characters.Rojo, 220, 40, 60, 101);
+    this.healthBlue = new PartyHealthBar(this, Characters.Blue, 217, 51, 93, 93);
+    this.healthMidori = new PartyHealthBar(this, Characters.Midori, 214, 62, 97, 123);
 
     this.stateMachine = new StateMachine(
       'movePhase',
@@ -168,6 +177,12 @@ enum Characters {
   Midori = 'midori',
 }
 
+const CHARACTER_COLORS = {
+  [Characters.Rojo]: 0xac311e,
+  [Characters.Blue]: 0x63a09b,
+  [Characters.Midori]: 0x5ad932,
+};
+
 class PartyMember {
   scene: Phaser.Scene;
   character: Characters;
@@ -201,6 +216,70 @@ class PartyMember {
     this.ground = scene.add.image(x - 1, y + 14, `party[${character}]Ground`);
     this.sprite = scene.add.sprite(x, y, `party[${character}]`, 0);
     this.sprite.play(`party[${character}]Idle`);
+  }
+}
+
+class PartyHealthBar {
+  scene: Phaser.Scene;
+  character: Characters;
+
+  barFrame: Phaser.GameObjects.Image;
+  bar1: Phaser.GameObjects.Line;
+  bar2: Phaser.GameObjects.Line;
+  text: Text;
+  portrait: Phaser.GameObjects.Sprite;
+
+  maxHealth = 0;
+  currentHealth = 0;
+
+  static partySpriteIndex = {
+    [Characters.Rojo]: 0,
+    [Characters.Blue]: 1,
+    [Characters.Midori]: 2,
+  };
+
+  static preload(scene: BattleScene) {
+    scene.load.spritesheet('partyHealthBarFrames', 'ui/party_health_bar_frames.png', {
+      frameWidth: 34,
+      frameHeight: 6,
+    });
+    scene.load.spritesheet('partyPortraits', 'ui/party_portraits.png', { frameWidth: 16, frameHeight: 16 });
+  }
+
+  constructor(
+    scene: BattleScene,
+    character: Characters,
+    barX: number,
+    barY: number,
+    currentHealth: number,
+    maxHealth: number
+  ) {
+    this.scene = scene;
+    this.character = character;
+    this.barFrame = scene.add.image(barX, barY, 'partyHealthBarFrames', PartyHealthBar.partySpriteIndex[character]);
+
+    this.bar1 = scene.add.line(barX - 14, barY, 0, 0, 29, 0, CHARACTER_COLORS[character]);
+    this.bar1.setOrigin(0, 0.5);
+    this.bar1.setLineWidth(0.5);
+    this.bar2 = scene.add.line(barX - 15, barY + 1, 0, 0, 29, 0, CHARACTER_COLORS[character]);
+    this.bar2.setOrigin(0, 0.5);
+    this.bar2.setLineWidth(0.5);
+
+    this.text = new Text(scene, barX + 18, barY - 2, 7, 1, '', { tint: 0xfffa9b });
+
+    this.portrait = scene.add.sprite(barX - 25, barY - 5, 'partyPortraits', PartyHealthBar.partySpriteIndex[character]);
+
+    this.setHealth(currentHealth, maxHealth);
+  }
+
+  setHealth(currentHealth: number, maxHealth?: number) {
+    this.currentHealth = currentHealth;
+    this.maxHealth = maxHealth ?? this.maxHealth;
+
+    const percent = this.currentHealth / this.maxHealth;
+    this.bar1.setTo(0, 0, Math.ceil(percent * 29), 0);
+    this.bar2.setTo(0, 0, Math.ceil(percent * 29), 0);
+    this.text.setText(`${this.currentHealth.toString().padStart(3, ' ')}/${this.maxHealth}`);
   }
 }
 
