@@ -18,10 +18,17 @@ import Phaser from 'phaser';
 const GRID_WIDTH = 8;
 const GRID_HEIGHT = 9;
 
-const SPHERE_WINDOW_LEFT = 64;
+const SPHERE_WINDOW_LEFT = 48;
 const SPHERE_WINDOW_TOP = 40;
-const SPHERE_STOCK_LEFT = 70;
+const SPHERE_STOCK_LEFT = 54;
 const SPHERE_STOCK_TOP = 172;
+const HEALTH_LEFT = 186;
+const HEALTH_TOP = 37;
+
+const PARTY_LEFT = 178;
+const PARTY_TOP = 67;
+const ENEMY_LEFT = 275;
+const ENEMY_TOP = 85;
 
 export default class BattleScene extends Phaser.Scene {
   keys!: Phaser.Types.Input.Keyboard.CursorKeys;
@@ -46,6 +53,7 @@ export default class BattleScene extends Phaser.Scene {
   healthRojo!: PartyHealthBar;
   healthBlue!: PartyHealthBar;
   healthMidori!: PartyHealthBar;
+  healthEnemy!: EnemyHealthBar;
 
   // Sound
   soundSwap!: Phaser.Sound.BaseSound;
@@ -68,6 +76,7 @@ export default class BattleScene extends Phaser.Scene {
     Skelly.preload(this);
     PartyMember.preload(this);
     PartyHealthBar.preload(this);
+    EnemyHealthBar.preload(this);
 
     this.load.image('battleBorder', 'ui/battle_border.png');
     this.load.image('battleGrid', 'ui/battle_grid.png');
@@ -106,13 +115,14 @@ export default class BattleScene extends Phaser.Scene {
       this.stockCounts.push(new StockCount(this, type));
     }
 
-    this.enemySkelly = new Skelly(this, 275 + 32, 85 + 32);
-    this.partyRojo = new PartyMember(this, Characters.Rojo, 210 + 16, 67 + 16);
-    this.partyBlue = new PartyMember(this, Characters.Blue, 194 + 16, 99 + 16);
-    this.partyMidori = new PartyMember(this, Characters.Midori, 210 + 16, 131 + 16);
-    this.healthRojo = new PartyHealthBar(this, Characters.Rojo, 220, 40, 60, 101);
-    this.healthBlue = new PartyHealthBar(this, Characters.Blue, 217, 51, 93, 93);
-    this.healthMidori = new PartyHealthBar(this, Characters.Midori, 214, 62, 97, 123);
+    this.enemySkelly = new Skelly(this, ENEMY_LEFT + 32, ENEMY_TOP + 32);
+    this.partyRojo = new PartyMember(this, Characters.Rojo, PARTY_LEFT + 32, PARTY_TOP + 16);
+    this.partyBlue = new PartyMember(this, Characters.Blue, PARTY_LEFT + 16, PARTY_TOP + 48);
+    this.partyMidori = new PartyMember(this, Characters.Midori, PARTY_LEFT + 32, PARTY_TOP + 80);
+    this.healthRojo = new PartyHealthBar(this, Characters.Rojo, HEALTH_LEFT + 23, HEALTH_TOP + 3, 60, 101);
+    this.healthBlue = new PartyHealthBar(this, Characters.Blue, HEALTH_LEFT + 20, HEALTH_TOP + 14, 93, 93);
+    this.healthMidori = new PartyHealthBar(this, Characters.Midori, HEALTH_LEFT + 17, HEALTH_TOP + 25, 97, 123);
+    this.healthEnemy = new EnemyHealthBar(this, HEALTH_LEFT + 120, HEALTH_TOP + 14, 100, 100);
 
     this.stateMachine = new StateMachine(
       'movePhase',
@@ -280,6 +290,39 @@ class PartyHealthBar {
     this.bar1.setTo(0, 0, Math.ceil(percent * 29), 0);
     this.bar2.setTo(0, 0, Math.ceil(percent * 29), 0);
     this.text.setText(`${this.currentHealth.toString().padStart(3, ' ')}/${this.maxHealth}`);
+  }
+}
+
+class EnemyHealthBar {
+  barFrame: Phaser.GameObjects.Image;
+  bar1: Phaser.GameObjects.Rectangle;
+  bar2: Phaser.GameObjects.Rectangle;
+
+  maxHealth = 0;
+  currentHealth = 0;
+
+  static preload(scene: BattleScene) {
+    scene.load.image('enemyHealthBarFrame', 'ui/enemy_health_bar_frame.png');
+  }
+
+  constructor(scene: BattleScene, barX: number, barY: number, currentHealth: number, maxHealth: number) {
+    this.barFrame = scene.add.image(barX, barY, 'enemyHealthBarFrame');
+
+    this.bar1 = scene.add.rectangle(barX - 24, barY - 1, 59, 2, 0xfff55e);
+    this.bar1.setOrigin(0, 0.5);
+    this.bar2 = scene.add.rectangle(barX - 25, barY + 1, 59, 2, 0xfff55e);
+    this.bar2.setOrigin(0, 0.5);
+
+    this.setHealth(currentHealth, maxHealth);
+  }
+
+  setHealth(currentHealth: number, maxHealth?: number) {
+    this.currentHealth = currentHealth;
+    this.maxHealth = maxHealth ?? this.maxHealth;
+
+    const percent = this.currentHealth / this.maxHealth;
+    this.bar1.width = Math.ceil(percent * 59);
+    this.bar2.width = Math.ceil(percent * 59);
   }
 }
 
