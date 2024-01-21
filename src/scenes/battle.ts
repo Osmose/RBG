@@ -77,6 +77,7 @@ export default class BattleScene extends Phaser.Scene {
     PartyMember.preload(this);
     PartyHealthBar.preload(this);
     EnemyHealthBar.preload(this);
+    ActionChoiceState.preload(this);
 
     this.load.image('battleBorder', 'ui/battle_border.png');
     this.load.image('battleGrid', 'ui/battle_grid.png');
@@ -91,6 +92,7 @@ export default class BattleScene extends Phaser.Scene {
     Sphere.create(this);
     Skelly.create(this);
     PartyMember.create(this);
+    ActionChoiceState.create(this);
 
     // Keyboard
     this.keys = this.input.keyboard!.createCursorKeys();
@@ -125,8 +127,9 @@ export default class BattleScene extends Phaser.Scene {
     this.healthEnemy = new EnemyHealthBar(this, HEALTH_LEFT + 120, HEALTH_TOP + 14, 100, 100);
 
     this.stateMachine = new StateMachine(
-      'movePhase',
+      'actionChoice',
       {
+        actionChoice: new ActionChoiceState(),
         movePhase: new MovePhaseState(),
         swapChoice: new SwapChoiceState(),
         swap: new SwapState(),
@@ -178,6 +181,14 @@ class Skelly {
     this.ground = scene.add.image(x - 6, y + 23, 'enemySkellyGround');
     this.sprite = scene.add.sprite(x, y, 'enemySkellyIdle', 0);
     this.sprite.play('enemySkellyIdle');
+  }
+
+  setFaded(faded: boolean) {
+    if (faded) {
+      this.sprite.setTint(0x666666);
+    } else {
+      this.sprite.setTint(0xffffff);
+    }
   }
 }
 
@@ -504,6 +515,93 @@ class StockCount {
     ]);
 
     this.count = newCount;
+  }
+}
+
+enum BattleActions {
+  Attack = 'attack',
+  Defend = 'defend',
+}
+
+class ActionChoiceState extends State {
+  actionSprites!: { [character in Characters]: { [action in BattleActions]: Phaser.GameObjects.Sprite } };
+  allActionSprites!: Phaser.GameObjects.Sprite;
+
+  static actionSpriteIndex = {
+    [BattleActions.Defend]: 0,
+    [BattleActions.Attack]: 8,
+  };
+
+  static preload(scene: BattleScene) {
+    scene.load.spritesheet('battleActions', 'ui/battle_actions.png', { frameWidth: 22, frameHeight: 20 });
+  }
+
+  static create(scene: BattleScene) {
+    for (const battleAction of Object.values(BattleActions)) {
+      const index = ActionChoiceState.actionSpriteIndex[battleAction];
+      scene.anims.create({
+        key: `battleActionAppear[${battleAction}]`,
+        frameRate: 10,
+        frames: scene.anims.generateFrameNumbers('battleActions', {
+          frames: [index, index + 1, index + 2],
+        }),
+      });
+      scene.anims.create({
+        key: `battleActionSelect[${battleAction}]`,
+        frameRate: 10,
+        frames: scene.anims.generateFrameNumbers('battleActions', {
+          frames: [index + 3, index + 4],
+        }),
+      });
+      scene.anims.create({
+        key: `battleActionDisappearSelected[${battleAction}]`,
+        frameRate: 10,
+        frames: scene.anims.generateFrameNumbers('battleActions', {
+          frames: [index + 5, index + 6, index + 7],
+        }),
+      });
+      scene.anims.create({
+        key: `battleActionDisappearUnselected[${battleAction}]`,
+        frameRate: 10,
+        frames: scene.anims.generateFrameNumbers('battleActions', {
+          frames: [index, index + 6, index + 7],
+        }),
+      });
+    }
+  }
+
+  init(scene: BattleScene) {
+    const { partyRojo, partyBlue, partyMidori } = scene;
+    this.actionSprites = {
+      [Characters.Rojo]: {
+        [BattleActions.Defend]: scene.add.sprite(partyRojo.sprite.x - 26, partyRojo.sprite.y, 'battleActions', 1),
+        [BattleActions.Attack]: scene.add.sprite(partyRojo.sprite.x + 26, partyRojo.sprite.y, 'battleActions', 9),
+      },
+      [Characters.Blue]: {
+        [BattleActions.Defend]: scene.add.sprite(partyBlue.sprite.x - 26, partyBlue.sprite.y, 'battleActions', 1),
+        [BattleActions.Attack]: scene.add.sprite(partyBlue.sprite.x + 26, partyBlue.sprite.y, 'battleActions', 9),
+      },
+      [Characters.Midori]: {
+        [BattleActions.Defend]: scene.add.sprite(partyMidori.sprite.x - 26, partyMidori.sprite.y, 'battleActions', 1),
+        [BattleActions.Attack]: scene.add.sprite(partyMidori.sprite.x + 26, partyMidori.sprite.y, 'battleActions', 9),
+      },
+    };
+
+    const allSprites = Object.values(this.actionSprites).flatMap((actionMap) => Object.values(actionMap));
+    for (const sprite of allSprites) {
+      sprite.setVisible(false);
+    }
+  }
+
+  async handleEntered(scene: BattleScene) {
+    for (const character of [Characters.Rojo, Characters.Blue, Characters.Midori]) {
+      for (const action of [BattleActions.Defend, BattleActions.Attack]) {
+        const sprite = this.actionSprites[character][action];
+        sprite.play(`battleActionAppear[${action}]`);
+        sprite.setVisible(true);
+        await wait(scene, 100);
+      }
+    }
   }
 }
 
