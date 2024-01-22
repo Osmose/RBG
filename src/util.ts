@@ -188,3 +188,44 @@ export function asyncTween(scene: Phaser.Scene, config: Phaser.Types.Tweens.Twee
   promise.tween = tween!;
   return promise;
 }
+
+/** Execute a counter tween and resolve the returned promise once it completes */
+export function asyncCounter(scene: Phaser.Scene, config: Phaser.Types.Tweens.NumberTweenBuilderConfig) {
+  let tween: Phaser.Tweens.Tween | null = null;
+  const promise: TweenPromise = new Promise<void>((resolve) => {
+    tween = scene.tweens.addCounter({
+      ...config,
+      onComplete(...args) {
+        if (config.onComplete) {
+          config.onComplete(...args);
+        }
+        resolve();
+      },
+    });
+  }) as TweenPromise;
+  promise.tween = tween!;
+  return promise;
+}
+
+export function setFaded(gameObject: Phaser.GameObjects.Components.Tint, faded: boolean) {
+  gameObject.setTint(faded ? 0x666666 : 0xffffff);
+}
+
+export async function animateFaded(
+  scene: Phaser.Scene,
+  gameObject: Phaser.GameObjects.Components.Tint,
+  faded: boolean,
+  duration: number = 400
+) {
+  const tint = faded ? 0x66 : 0xff;
+  return asyncCounter(scene, {
+    from: gameObject.tintTopLeft & 0xff,
+    to: tint,
+    duration,
+    onUpdate: (tween) => {
+      const value = Math.floor(tween.getValue());
+      const color = Phaser.Display.Color.GetColor(value, value, value);
+      gameObject.setTint(color);
+    },
+  });
+}

@@ -11,9 +11,13 @@ import {
   pixelDiff,
   randomChoice,
   wait,
+  setFaded,
+  animateFaded,
 } from 'gate/util';
 import Text from 'gate/text';
 import Phaser from 'phaser';
+import BaseScene from 'gate/scenes/base';
+import Menu, { horizontalMenuItems } from 'gate/menu';
 
 const GRID_WIDTH = 8;
 const GRID_HEIGHT = 9;
@@ -25,14 +29,12 @@ const SPHERE_STOCK_TOP = 172;
 const HEALTH_LEFT = 186;
 const HEALTH_TOP = 37;
 
-const PARTY_LEFT = 178;
+const PARTY_LEFT = 184;
 const PARTY_TOP = 67;
 const ENEMY_LEFT = 275;
 const ENEMY_TOP = 85;
 
-export default class BattleScene extends Phaser.Scene {
-  keys!: Phaser.Types.Input.Keyboard.CursorKeys;
-
+export default class BattleScene extends BaseScene {
   stateMachine!: StateMachine;
 
   // UI
@@ -40,14 +42,13 @@ export default class BattleScene extends Phaser.Scene {
   battleGrid!: Phaser.GameObjects.TileSprite;
   battleSphereWindow!: Phaser.GameObjects.Image;
   battleSphereStock!: Phaser.GameObjects.Image;
+  battleSphereWindowOverlay!: Phaser.GameObjects.Rectangle;
 
   // Enemies
   enemySkelly!: Skelly;
 
   // Party
-  partyRojo!: PartyMember;
-  partyBlue!: PartyMember;
-  partyMidori!: PartyMember;
+  party!: { [key in Characters]: PartyMember };
 
   // Health bars
   healthRojo!: PartyHealthBar;
@@ -62,6 +63,9 @@ export default class BattleScene extends Phaser.Scene {
   // Battle state
   stockCounts!: StockCount[];
   spheres!: Sphere[];
+
+  /** Order in which character stuff generally happens */
+  characterOrder = [Characters.Rojo, Characters.Blue, Characters.Midori];
 
   constructor() {
     super({
@@ -89,18 +93,26 @@ export default class BattleScene extends Phaser.Scene {
   }
 
   create() {
+    super.create();
+
     Sphere.create(this);
     Skelly.create(this);
     PartyMember.create(this);
     ActionChoiceState.create(this);
 
-    // Keyboard
-    this.keys = this.input.keyboard!.createCursorKeys();
-
     this.battleGrid = this.add.tileSprite(196, 114, 326, 104, 'battleGrid');
     this.battleBorder = this.add.image(190, 120, 'battleBorder');
     this.battleSphereWindow = this.add.image(SPHERE_WINDOW_LEFT + 58, SPHERE_WINDOW_TOP + 65, 'battleSphereWindow');
     this.battleSphereStock = this.add.image(SPHERE_STOCK_LEFT + 46, SPHERE_STOCK_TOP + 16, 'battleSphereStock');
+    this.battleSphereWindowOverlay = this.add.rectangle(
+      this.battleSphereWindow.x,
+      this.battleSphereWindow.y,
+      this.battleSphereWindow.width,
+      this.battleSphereWindow.height,
+      0x000000,
+      0.6
+    );
+    this.battleSphereWindowOverlay.setDepth(10);
 
     this.soundSwap = this.sound.add('swap');
     this.soundClear = this.sound.add('clear');
@@ -118,17 +130,22 @@ export default class BattleScene extends Phaser.Scene {
     }
 
     this.enemySkelly = new Skelly(this, ENEMY_LEFT + 32, ENEMY_TOP + 32);
-    this.partyRojo = new PartyMember(this, Characters.Rojo, PARTY_LEFT + 32, PARTY_TOP + 16);
-    this.partyBlue = new PartyMember(this, Characters.Blue, PARTY_LEFT + 16, PARTY_TOP + 48);
-    this.partyMidori = new PartyMember(this, Characters.Midori, PARTY_LEFT + 32, PARTY_TOP + 80);
+
+    this.party = {
+      [Characters.Rojo]: new PartyMember(this, Characters.Rojo, PARTY_LEFT + 32, PARTY_TOP + 16),
+      [Characters.Blue]: new PartyMember(this, Characters.Blue, PARTY_LEFT + 16, PARTY_TOP + 48),
+      [Characters.Midori]: new PartyMember(this, Characters.Midori, PARTY_LEFT + 32, PARTY_TOP + 80),
+    };
+
     this.healthRojo = new PartyHealthBar(this, Characters.Rojo, HEALTH_LEFT + 23, HEALTH_TOP + 3, 60, 101);
     this.healthBlue = new PartyHealthBar(this, Characters.Blue, HEALTH_LEFT + 20, HEALTH_TOP + 14, 93, 93);
     this.healthMidori = new PartyHealthBar(this, Characters.Midori, HEALTH_LEFT + 17, HEALTH_TOP + 25, 97, 123);
     this.healthEnemy = new EnemyHealthBar(this, HEALTH_LEFT + 120, HEALTH_TOP + 14, 100, 100);
 
     this.stateMachine = new StateMachine(
-      'actionChoice',
+      'startActionChoice',
       {
+        startActionChoice: new StartActionChoiceState(),
         actionChoice: new ActionChoiceState(),
         movePhase: new MovePhaseState(),
         swapChoice: new SwapChoiceState(),
@@ -184,11 +201,15 @@ class Skelly {
   }
 
   setFaded(faded: boolean) {
-    if (faded) {
-      this.sprite.setTint(0x666666);
-    } else {
-      this.sprite.setTint(0xffffff);
-    }
+    setFaded(this.sprite, faded);
+    setFaded(this.ground, faded);
+  }
+
+  async animateFaded(faded: boolean) {
+    return Promise.all([
+      animateFaded(this.scene, this.sprite, faded, 400),
+      animateFaded(this.scene, this.ground, faded, 400),
+    ]);
   }
 }
 
@@ -237,6 +258,18 @@ class PartyMember {
     this.ground = scene.add.image(x - 1, y + 14, `party[${character}]Ground`);
     this.sprite = scene.add.sprite(x, y, `party[${character}]`, 0);
     this.sprite.play(`party[${character}]Idle`);
+  }
+
+  setFaded(faded: boolean) {
+    setFaded(this.sprite, faded);
+    setFaded(this.ground, faded);
+  }
+
+  async animateFaded(faded: boolean) {
+    return Promise.all([
+      animateFaded(this.scene, this.sprite, faded, 400),
+      animateFaded(this.scene, this.ground, faded, 400),
+    ]);
   }
 }
 
@@ -518,6 +551,20 @@ class StockCount {
   }
 }
 
+class StartActionChoiceState extends State {
+  async handleEntered(scene: BattleScene) {
+    await wait(scene, 500);
+
+    const fadeTweens = [scene.enemySkelly.animateFaded(true)];
+    for (const character of scene.characterOrder.slice(1)) {
+      fadeTweens.push(scene.party[character].animateFaded(true));
+    }
+    await Promise.all(fadeTweens);
+
+    this.transition('actionChoice', 0);
+  }
+}
+
 enum BattleActions {
   Attack = 'attack',
   Defend = 'defend',
@@ -526,10 +573,14 @@ enum BattleActions {
 class ActionChoiceState extends State {
   actionSprites!: { [character in Characters]: { [action in BattleActions]: Phaser.GameObjects.Sprite } };
   allActionSprites!: Phaser.GameObjects.Sprite;
+  menu!: Menu;
+  characterIndex!: number;
+  character!: Characters;
+  partyMember!: PartyMember;
 
   static actionSpriteIndex = {
     [BattleActions.Defend]: 0,
-    [BattleActions.Attack]: 8,
+    [BattleActions.Attack]: 9,
   };
 
   static preload(scene: BattleScene) {
@@ -550,7 +601,7 @@ class ActionChoiceState extends State {
         key: `battleActionSelect[${battleAction}]`,
         frameRate: 10,
         frames: scene.anims.generateFrameNumbers('battleActions', {
-          frames: [index + 3, index + 4],
+          frames: [index + 4, index + 8, index + 3],
         }),
       });
       scene.anims.create({
@@ -571,37 +622,66 @@ class ActionChoiceState extends State {
   }
 
   init(scene: BattleScene) {
-    const { partyRojo, partyBlue, partyMidori } = scene;
-    this.actionSprites = {
-      [Characters.Rojo]: {
-        [BattleActions.Defend]: scene.add.sprite(partyRojo.sprite.x - 26, partyRojo.sprite.y, 'battleActions', 1),
-        [BattleActions.Attack]: scene.add.sprite(partyRojo.sprite.x + 26, partyRojo.sprite.y, 'battleActions', 9),
-      },
-      [Characters.Blue]: {
-        [BattleActions.Defend]: scene.add.sprite(partyBlue.sprite.x - 26, partyBlue.sprite.y, 'battleActions', 1),
-        [BattleActions.Attack]: scene.add.sprite(partyBlue.sprite.x + 26, partyBlue.sprite.y, 'battleActions', 9),
-      },
-      [Characters.Midori]: {
-        [BattleActions.Defend]: scene.add.sprite(partyMidori.sprite.x - 26, partyMidori.sprite.y, 'battleActions', 1),
-        [BattleActions.Attack]: scene.add.sprite(partyMidori.sprite.x + 26, partyMidori.sprite.y, 'battleActions', 9),
-      },
-    };
+    this.actionSprites = {} as typeof this.actionSprites;
+    for (const character of scene.characterOrder) {
+      const partyMember = scene.party[character];
+      this.actionSprites[character] = {
+        [BattleActions.Defend]: scene.add.sprite(partyMember.sprite.x - 26, partyMember.sprite.y, 'battleActions', 1),
+        [BattleActions.Attack]: scene.add.sprite(partyMember.sprite.x + 26, partyMember.sprite.y, 'battleActions', 9),
+      };
+    }
 
     const allSprites = Object.values(this.actionSprites).flatMap((actionMap) => Object.values(actionMap));
     for (const sprite of allSprites) {
       sprite.setVisible(false);
     }
+
+    this.menu = new Menu(scene, horizontalMenuItems([{ key: BattleActions.Defend }, { key: BattleActions.Attack }]));
+    this.menu.pauseInput();
+    this.menu.on('focus', (cursor: string) => {
+      for (const [key, sprite] of Object.entries(this.actionSprites[this.character])) {
+        sprite.setFrame(ActionChoiceState.actionSpriteIndex[key as BattleActions] + (key === cursor ? 3 : 2));
+      }
+    });
+    this.menu.on('select', (cursor: string) => {
+      this.menu.pauseInput();
+      for (const [key, sprite] of Object.entries(this.actionSprites[this.character])) {
+        if (key === cursor) {
+          sprite.play(`battleActionSelect[${key}]`);
+        } else {
+          sprite.play({ key: `battleActionDisappearUnselected[${key}]`, hideOnComplete: true });
+        }
+      }
+      this.partyMember.animateFaded(true);
+
+      if (this.characterIndex < scene.characterOrder.length - 1) {
+        this.transition('actionChoice', this.characterIndex + 1);
+      } else {
+        this.transition('movePhase');
+      }
+    });
   }
 
-  async handleEntered(scene: BattleScene) {
-    for (const character of [Characters.Rojo, Characters.Blue, Characters.Midori]) {
-      for (const action of [BattleActions.Defend, BattleActions.Attack]) {
-        const sprite = this.actionSprites[character][action];
-        sprite.play(`battleActionAppear[${action}]`);
-        sprite.setVisible(true);
-        await wait(scene, 100);
-      }
+  async handleEntered(scene: BattleScene, characterIndex: number) {
+    this.characterIndex = characterIndex;
+    this.character = scene.characterOrder[characterIndex];
+    this.partyMember = scene.party[this.character];
+
+    const animations: Promise<any>[] = [this.partyMember.animateFaded(false)];
+    for (const action of [BattleActions.Defend, BattleActions.Attack]) {
+      const sprite = this.actionSprites[this.character][action];
+      animations.push(asyncAnimation(sprite, `battleActionAppear[${action}]`));
+      sprite.setVisible(true);
+      await wait(scene, 100);
     }
+    await Promise.all(animations);
+
+    this.menu.moveCursorTo(BattleActions.Attack);
+    this.menu.resumeInput();
+  }
+
+  execute() {
+    this.menu.update();
   }
 }
 
@@ -630,6 +710,11 @@ class MovePhaseState extends State {
   }
 
   handleEntered(scene: BattleScene, toX?: number, toY?: number) {
+    scene.tweens.add({
+      targets: [scene.battleSphereWindowOverlay],
+      alpha: 0,
+      duration: 400,
+    });
     this.cursor.setVisible(true);
 
     if (toX !== undefined && toY !== undefined) {
