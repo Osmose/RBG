@@ -59,6 +59,9 @@ export default class BattleScene extends BaseScene {
   // Sound
   soundSwap!: Phaser.Sound.BaseSound;
   soundClear!: Phaser.Sound.BaseSound;
+  soundActionAppear!: Phaser.Sound.BaseSound;
+  soundSelect!: Phaser.Sound.BaseSound;
+  soundMoveCursor!: Phaser.Sound.BaseSound;
 
   // Battle state
   stockCounts!: StockCount[];
@@ -88,8 +91,11 @@ export default class BattleScene extends BaseScene {
     this.load.image('battleSphereWindow', 'ui/battle_sphere_window.png');
     this.load.image('battleSphereStock', 'ui/color_stock.png');
 
-    this.load.audio('swap', 'audio/swap.wav');
+    this.load.audio('swap', 'audio/swap.mp3');
     this.load.audio('clear', 'audio/clear.mp3');
+    this.load.audio('actionAppear', 'audio/action_appear.mp3');
+    this.load.audio('select', 'audio/select.mp3');
+    this.load.audio('moveCursor', 'audio/move_cursor.mp3');
   }
 
   create() {
@@ -116,6 +122,9 @@ export default class BattleScene extends BaseScene {
 
     this.soundSwap = this.sound.add('swap');
     this.soundClear = this.sound.add('clear');
+    this.soundActionAppear = this.sound.add('actionAppear');
+    this.soundSelect = this.sound.add('select');
+    this.soundMoveCursor = this.sound.add('moveCursor');
 
     this.spheres = [];
     for (let y = 0; y < GRID_HEIGHT; y++) {
@@ -639,12 +648,18 @@ class ActionChoiceState extends State {
     this.menu = new Menu(scene, horizontalMenuItems([{ key: BattleActions.Defend }, { key: BattleActions.Attack }]));
     this.menu.pauseInput();
     this.menu.on('focus', (cursor: string) => {
+      // Only play sound for user-initiated focus
+      if (!this.menu.inputPaused) {
+        scene.soundMoveCursor.play();
+      }
+
       for (const [key, sprite] of Object.entries(this.actionSprites[this.character])) {
         sprite.setFrame(ActionChoiceState.actionSpriteIndex[key as BattleActions] + (key === cursor ? 3 : 2));
       }
     });
     this.menu.on('select', (cursor: string) => {
       this.menu.pauseInput();
+      scene.soundSelect.play();
       for (const [key, sprite] of Object.entries(this.actionSprites[this.character])) {
         if (key === cursor) {
           sprite.play(`battleActionSelect[${key}]`);
@@ -667,6 +682,8 @@ class ActionChoiceState extends State {
     this.character = scene.characterOrder[characterIndex];
     this.partyMember = scene.party[this.character];
 
+    scene.soundActionAppear.play();
+
     const animations: Promise<any>[] = [this.partyMember.animateFaded(false)];
     for (const action of [BattleActions.Defend, BattleActions.Attack]) {
       const sprite = this.actionSprites[this.character][action];
@@ -686,11 +703,13 @@ class ActionChoiceState extends State {
 }
 
 class MovePhaseState extends State {
+  scene!: BattleScene;
   cursor!: Phaser.GameObjects.Sprite;
   cursorX!: number;
   cursorY!: number;
 
   init(scene: BattleScene) {
+    this.scene = scene;
     this.cursor = scene.add.sprite(0, 0, 'battleSpheres', 5);
     this.cursorX = 0;
     this.cursorY = 0;
@@ -706,6 +725,7 @@ class MovePhaseState extends State {
   }
 
   moveCursor(xDiff: number, yDiff: number) {
+    this.scene.soundMoveCursor.play();
     this.setCursorPos(this.cursorX + xDiff, this.cursorY + yDiff);
   }
 
