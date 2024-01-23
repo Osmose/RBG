@@ -34,6 +34,9 @@ const PARTY_TOP = 67;
 const ENEMY_LEFT = 275;
 const ENEMY_TOP = 85;
 
+const ALPHA_FADED = 0.6;
+const ALPHA_UNFADED = 0;
+
 export default class BattleScene extends BaseScene {
   stateMachine!: StateMachine;
 
@@ -43,6 +46,8 @@ export default class BattleScene extends BaseScene {
   battleSphereWindow!: Phaser.GameObjects.Image;
   battleSphereStock!: Phaser.GameObjects.Image;
   battleSphereWindowOverlay!: Phaser.GameObjects.Rectangle;
+  actionSprites!: { [character in Characters]: { [action in BattleActions]: Phaser.GameObjects.Sprite } };
+  allActionSprites!: Phaser.GameObjects.Sprite;
 
   // Enemies
   enemySkelly!: Skelly;
@@ -56,6 +61,10 @@ export default class BattleScene extends BaseScene {
   healthMidori!: PartyHealthBar;
   healthEnemy!: EnemyHealthBar;
 
+  // Spheres
+  stockCounts!: StockCount[];
+  spheres!: Sphere[];
+
   // Sound
   soundSwap!: Phaser.Sound.BaseSound;
   soundClear!: Phaser.Sound.BaseSound;
@@ -63,9 +72,9 @@ export default class BattleScene extends BaseScene {
   soundSelect!: Phaser.Sound.BaseSound;
   soundMoveCursor!: Phaser.Sound.BaseSound;
 
-  // Battle state
-  stockCounts!: StockCount[];
-  spheres!: Sphere[];
+  // Battle logic
+  battleState!: BattleState;
+  currentTurnInputs!: TurnInputs;
 
   /** Order in which character stuff generally happens */
   characterOrder = [Characters.Rojo, Characters.Blue, Characters.Midori];
@@ -115,10 +124,9 @@ export default class BattleScene extends BaseScene {
       this.battleSphereWindow.y,
       this.battleSphereWindow.width,
       this.battleSphereWindow.height,
-      0x000000,
-      0.6
+      0x000000
     );
-    this.battleSphereWindowOverlay.setDepth(10);
+    this.battleSphereWindowOverlay.setDepth(10).setAlpha(ALPHA_FADED);
 
     this.soundSwap = this.sound.add('swap');
     this.soundClear = this.sound.add('clear');
@@ -146,10 +154,47 @@ export default class BattleScene extends BaseScene {
       [Characters.Midori]: new PartyMember(this, Characters.Midori, PARTY_LEFT + 32, PARTY_TOP + 80),
     };
 
-    this.healthRojo = new PartyHealthBar(this, Characters.Rojo, HEALTH_LEFT + 23, HEALTH_TOP + 3, 60, 101);
-    this.healthBlue = new PartyHealthBar(this, Characters.Blue, HEALTH_LEFT + 20, HEALTH_TOP + 14, 93, 93);
-    this.healthMidori = new PartyHealthBar(this, Characters.Midori, HEALTH_LEFT + 17, HEALTH_TOP + 25, 97, 123);
-    this.healthEnemy = new EnemyHealthBar(this, HEALTH_LEFT + 120, HEALTH_TOP + 14, 100, 100);
+    this.battleState = new BattleState(
+      {
+        [Characters.Rojo]: { hp: 101, maxHp: 101 },
+        [Characters.Blue]: { hp: 93, maxHp: 93 },
+        [Characters.Midori]: { hp: 123, maxHp: 123 },
+      },
+      { hp: 300, maxHp: 300 }
+    );
+
+    const pStatus = this.battleState.partyMemberStatuses;
+    this.healthRojo = new PartyHealthBar(
+      this,
+      Characters.Rojo,
+      HEALTH_LEFT + 23,
+      HEALTH_TOP + 3,
+      pStatus[Characters.Rojo].hp,
+      pStatus[Characters.Rojo].maxHp
+    );
+    this.healthBlue = new PartyHealthBar(
+      this,
+      Characters.Blue,
+      HEALTH_LEFT + 20,
+      HEALTH_TOP + 14,
+      pStatus[Characters.Blue].hp,
+      pStatus[Characters.Blue].maxHp
+    );
+    this.healthMidori = new PartyHealthBar(
+      this,
+      Characters.Midori,
+      HEALTH_LEFT + 17,
+      HEALTH_TOP + 25,
+      pStatus[Characters.Midori].hp,
+      pStatus[Characters.Midori].maxHp
+    );
+    this.healthEnemy = new EnemyHealthBar(
+      this,
+      HEALTH_LEFT + 120,
+      HEALTH_TOP + 14,
+      this.battleState.enemyStatus.hp,
+      this.battleState.enemyStatus.maxHp
+    );
 
     this.stateMachine = new StateMachine(
       'startActionChoice',
@@ -160,6 +205,7 @@ export default class BattleScene extends BaseScene {
         swapChoice: new SwapChoiceState(),
         swap: new SwapState(),
         solve: new SolveState(),
+        attackPhase: new AttackPhaseState(),
       },
       [this]
     );
@@ -180,6 +226,56 @@ export default class BattleScene extends BaseScene {
     }
 
     return this.spheres[gridY * GRID_WIDTH + gridX];
+  }
+}
+
+interface EnemyStatus {
+  hp: number;
+  maxHp: number;
+}
+
+interface PartyMemberStatus {
+  hp: number;
+  maxHp: number;
+}
+
+type TurnInputs = { [key in Characters]: BattleActions };
+
+interface TurnResult {
+  partyActions: { [key in Characters]: BattleActions };
+  stockCounts: { [key in SphereType]: number };
+}
+
+class BattleState {
+  partyMemberStatuses: { [key in Characters]: PartyMemberStatus };
+  enemyStatus: EnemyStatus;
+  stockCounts: { [key in SphereType]: number };
+
+  constructor(partyMemberStatuses: { [key in Characters]: PartyMemberStatus }, enemyStatus: EnemyStatus) {
+    this.partyMemberStatuses = partyMemberStatuses;
+    this.enemyStatus = enemyStatus;
+    this.stockCounts = {
+      [SphereType.Red]: 0,
+      [SphereType.Cyan]: 0,
+      [SphereType.Green]: 0,
+      [SphereType.Yellow]: 0,
+      [SphereType.Key]: 0,
+    };
+  }
+
+  setStockCount(type: SphereType, value: number) {
+    this.stockCounts[type] = value;
+  }
+
+  modStockCount(type: SphereType, value: number) {
+    this.stockCounts[type] += value;
+  }
+
+  executeTurn(turnInputs: TurnInputs): TurnResult {
+    return {
+      partyActions: turnInputs,
+      stockCounts: this.stockCounts,
+    };
   }
 }
 
@@ -511,7 +607,7 @@ class StockCount {
   bar: Phaser.GameObjects.Image;
   mask: Phaser.GameObjects.Rectangle;
   text: Text;
-  count: number;
+  count!: number;
 
   static preload(scene: BattleScene) {
     scene.load.spritesheet('sphereStockBar', 'ui/stock_bar.png', { frameWidth: 80, frameHeight: 4 });
@@ -524,7 +620,6 @@ class StockCount {
     this.mask.setOrigin(1, 0.5);
     this.text = new Text(scene, SPHERE_STOCK_LEFT + 94, SPHERE_STOCK_TOP + 1 + 6 * type, 2, 1, '0', { tint: 0xfffa9b });
 
-    this.count = 4;
     this.setCount(0);
   }
 
@@ -580,8 +675,6 @@ enum BattleActions {
 }
 
 class ActionChoiceState extends State {
-  actionSprites!: { [character in Characters]: { [action in BattleActions]: Phaser.GameObjects.Sprite } };
-  allActionSprites!: Phaser.GameObjects.Sprite;
   menu!: Menu;
   characterIndex!: number;
   character!: Characters;
@@ -631,16 +724,16 @@ class ActionChoiceState extends State {
   }
 
   init(scene: BattleScene) {
-    this.actionSprites = {} as typeof this.actionSprites;
+    scene.actionSprites = {} as typeof scene.actionSprites;
     for (const character of scene.characterOrder) {
       const partyMember = scene.party[character];
-      this.actionSprites[character] = {
+      scene.actionSprites[character] = {
         [BattleActions.Defend]: scene.add.sprite(partyMember.sprite.x - 26, partyMember.sprite.y, 'battleActions', 1),
         [BattleActions.Attack]: scene.add.sprite(partyMember.sprite.x + 26, partyMember.sprite.y, 'battleActions', 9),
       };
     }
 
-    const allSprites = Object.values(this.actionSprites).flatMap((actionMap) => Object.values(actionMap));
+    const allSprites = Object.values(scene.actionSprites).flatMap((actionMap) => Object.values(actionMap));
     for (const sprite of allSprites) {
       sprite.setVisible(false);
     }
@@ -653,14 +746,17 @@ class ActionChoiceState extends State {
         scene.soundMoveCursor.play();
       }
 
-      for (const [key, sprite] of Object.entries(this.actionSprites[this.character])) {
+      for (const [key, sprite] of Object.entries(scene.actionSprites[this.character])) {
         sprite.setFrame(ActionChoiceState.actionSpriteIndex[key as BattleActions] + (key === cursor ? 3 : 2));
       }
     });
     this.menu.on('select', (cursor: string) => {
       this.menu.pauseInput();
+
+      scene.currentTurnInputs[this.character] = cursor as BattleActions;
+
       scene.soundSelect.play();
-      for (const [key, sprite] of Object.entries(this.actionSprites[this.character])) {
+      for (const [key, sprite] of Object.entries(scene.actionSprites[this.character])) {
         if (key === cursor) {
           sprite.play(`battleActionSelect[${key}]`);
         } else {
@@ -682,11 +778,16 @@ class ActionChoiceState extends State {
     this.character = scene.characterOrder[characterIndex];
     this.partyMember = scene.party[this.character];
 
+    // Reset choices if new turn
+    if (characterIndex === 0) {
+      scene.currentTurnInputs = {} as TurnInputs;
+    }
+
     scene.soundActionAppear.play();
 
     const animations: Promise<any>[] = [this.partyMember.animateFaded(false)];
     for (const action of [BattleActions.Defend, BattleActions.Attack]) {
-      const sprite = this.actionSprites[this.character][action];
+      const sprite = scene.actionSprites[this.character][action];
       animations.push(asyncAnimation(sprite, `battleActionAppear[${action}]`));
       sprite.setVisible(true);
       await wait(scene, 100);
@@ -732,7 +833,7 @@ class MovePhaseState extends State {
   handleEntered(scene: BattleScene, toX?: number, toY?: number) {
     scene.tweens.add({
       targets: [scene.battleSphereWindowOverlay],
-      alpha: 0,
+      alpha: ALPHA_UNFADED,
       duration: 400,
     });
     this.cursor.setVisible(true);
@@ -892,7 +993,13 @@ class SolveState extends State {
 
     // If no matches, exit early
     if (matchGroups.flat().length < 1) {
+      // TODO: Add bad sound to indicate no matches
       return this.transition('movePhase');
+    }
+
+    // Update the battle state first before animations
+    for (const [type, spheres] of matchedByType.entries()) {
+      scene.battleState.modStockCount(type, spheres.length);
     }
 
     // Clearing audio
@@ -953,6 +1060,34 @@ class SolveState extends State {
       sphere.sprite.setFrame(sphere.type ?? Sphere.EMPTY_FRAME);
     }
 
-    return this.transition('movePhase');
+    return this.transition('attackPhase');
+  }
+}
+
+class AttackPhaseState extends State {
+  async handleEntered(scene: BattleScene) {
+    const hideAnimations = [
+      asyncTween(scene, {
+        targets: [scene.battleSphereWindowOverlay],
+        alpha: ALPHA_FADED,
+        duration: 400,
+      }),
+    ];
+    for (const character of scene.characterOrder) {
+      const battleAction = scene.currentTurnInputs[character];
+      hideAnimations.push(
+        asyncAnimation(scene.actionSprites[character][battleAction], {
+          key: `battleActionDisappearSelected[${battleAction}]`,
+          hideOnComplete: true,
+        })
+      );
+    }
+    await Promise.all(hideAnimations);
+
+    const fadeInAnimations = [scene.enemySkelly.animateFaded(false)];
+    for (const partyMember of Object.values(scene.party)) {
+      fadeInAnimations.push(partyMember.animateFaded(false));
+    }
+    await Promise.all(fadeInAnimations);
   }
 }

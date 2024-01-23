@@ -160,10 +160,13 @@ export function wait(scene: Phaser.Scene, duration: number) {
 }
 
 /** Play an animation and resolve the returned promise once it completes. */
-export function asyncAnimation(sprite: Phaser.GameObjects.Sprite, key: string): Promise<void> {
+export function asyncAnimation(
+  sprite: Phaser.GameObjects.Sprite,
+  keyOrConfig: string | Phaser.Types.Animations.PlayAnimationConfig
+): Promise<void> {
   return new Promise((resolve) => {
     sprite.once('animationcomplete', resolve);
-    sprite.play(key);
+    sprite.play(keyOrConfig);
   });
 }
 
