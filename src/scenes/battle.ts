@@ -18,6 +18,7 @@ import Text from 'gate/text';
 import Phaser from 'phaser';
 import BaseScene from 'gate/scenes/base';
 import Menu, { horizontalMenuItems } from 'gate/menu';
+import Dialog from 'gate/dialog';
 
 const GRID_WIDTH = 8;
 const GRID_HEIGHT = 9;
@@ -34,6 +35,9 @@ const PARTY_TOP = 67;
 const ENEMY_LEFT = 275;
 const ENEMY_TOP = 85;
 
+const DIALOG_LEFT = 178;
+const DIALOG_TOP = 172;
+
 const ALPHA_FADED = 0.6;
 const ALPHA_UNFADED = 0;
 
@@ -48,6 +52,7 @@ export default class BattleScene extends BaseScene {
   battleSphereWindowOverlay!: Phaser.GameObjects.Rectangle;
   actionSprites!: { [character in Characters]: { [action in BattleActions]: Phaser.GameObjects.Sprite } };
   allActionSprites!: Phaser.GameObjects.Sprite;
+  dialog!: Dialog;
 
   // Enemies
   enemySkelly!: Skelly;
@@ -71,6 +76,7 @@ export default class BattleScene extends BaseScene {
   soundActionAppear!: Phaser.Sound.BaseSound;
   soundSelect!: Phaser.Sound.BaseSound;
   soundMoveCursor!: Phaser.Sound.BaseSound;
+  soundText!: Phaser.Sound.BaseSound;
 
   // Battle logic
   battleState!: BattleState;
@@ -94,6 +100,7 @@ export default class BattleScene extends BaseScene {
     PartyHealthBar.preload(this);
     EnemyHealthBar.preload(this);
     ActionChoiceState.preload(this);
+    Dialog.preload(this);
 
     this.load.image('battleBorder', 'ui/battle_border.png');
     this.load.image('battleGrid', 'ui/battle_grid.png');
@@ -105,6 +112,7 @@ export default class BattleScene extends BaseScene {
     this.load.audio('actionAppear', 'audio/action_appear.mp3');
     this.load.audio('select', 'audio/select.mp3');
     this.load.audio('moveCursor', 'audio/move_cursor.mp3');
+    this.load.audio('soundText', 'audio/text.mp3');
   }
 
   create() {
@@ -133,6 +141,7 @@ export default class BattleScene extends BaseScene {
     this.soundActionAppear = this.sound.add('actionAppear');
     this.soundSelect = this.sound.add('select');
     this.soundMoveCursor = this.sound.add('moveCursor');
+    this.soundText = this.sound.add('soundText');
 
     this.spheres = [];
     for (let y = 0; y < GRID_HEIGHT; y++) {
@@ -195,6 +204,8 @@ export default class BattleScene extends BaseScene {
       this.battleState.enemyStatus.hp,
       this.battleState.enemyStatus.maxHp
     );
+
+    this.dialog = new Dialog(this, DIALOG_LEFT + 82, DIALOG_TOP + 16);
 
     this.stateMachine = new StateMachine(
       'startActionChoice',
@@ -1089,5 +1100,7 @@ class AttackPhaseState extends State {
       fadeInAnimations.push(partyMember.animateFaded(false));
     }
     await Promise.all(fadeInAnimations);
+
+    await scene.dialog.animateText('- Attack!', 75, scene.soundText);
   }
 }
