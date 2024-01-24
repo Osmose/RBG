@@ -19,6 +19,7 @@ import Phaser from 'phaser';
 import BaseScene from 'gate/scenes/base';
 import Menu, { horizontalMenuItems } from 'gate/menu';
 import Dialog from 'gate/dialog';
+import { Entries } from 'type-fest';
 
 const GRID_WIDTH = 8;
 const GRID_HEIGHT = 9;
@@ -40,6 +41,32 @@ const DIALOG_TOP = 172;
 
 const ALPHA_FADED = 0.6;
 const ALPHA_UNFADED = 0;
+
+enum Characters {
+  Rojo = 'rojo',
+  Blue = 'blue',
+  Midori = 'midori',
+}
+
+const CHARACTER_COLORS = {
+  [Characters.Rojo]: 0xac311e,
+  [Characters.Blue]: 0x63a09b,
+  [Characters.Midori]: 0x5ad932,
+};
+
+enum SphereType {
+  Red = 0,
+  Cyan,
+  Green,
+  Yellow,
+  Key,
+}
+
+const CHARACTER_SPHERE_TYPES = {
+  [Characters.Rojo]: SphereType.Red,
+  [Characters.Blue]: SphereType.Cyan,
+  [Characters.Midori]: SphereType.Green,
+};
 
 export default class BattleScene extends BaseScene {
   stateMachine!: StateMachine;
@@ -81,6 +108,7 @@ export default class BattleScene extends BaseScene {
   // Battle logic
   battleState!: BattleState;
   currentTurnInputs!: TurnInputs;
+  currentTurnResult!: TurnResult;
 
   /** Order in which character stuff generally happens */
   characterOrder = [Characters.Rojo, Characters.Blue, Characters.Midori];
@@ -165,9 +193,9 @@ export default class BattleScene extends BaseScene {
 
     this.battleState = new BattleState(
       {
-        [Characters.Rojo]: { hp: 101, maxHp: 101 },
-        [Characters.Blue]: { hp: 93, maxHp: 93 },
-        [Characters.Midori]: { hp: 123, maxHp: 123 },
+        [Characters.Rojo]: { hp: 101, maxHp: 101, atk: 70 },
+        [Characters.Blue]: { hp: 93, maxHp: 93, atk: 25 },
+        [Characters.Midori]: { hp: 123, maxHp: 123, atk: 35 },
       },
       { hp: 300, maxHp: 300 }
     );
@@ -248,12 +276,30 @@ interface EnemyStatus {
 interface PartyMemberStatus {
   hp: number;
   maxHp: number;
+  atk: number;
 }
 
 type TurnInputs = { [key in Characters]: BattleActions };
 
+interface PartyActionResultAttack {
+  battleAction: BattleActions.Attack;
+  damage: number;
+}
+
+interface PartyActionResultDefend {
+  battleAction: BattleActions.Defend;
+}
+
+type PartyActionResult = PartyActionResultAttack | PartyActionResultDefend;
+
+interface EnemyActionResult {
+  target: Characters;
+  damage: number;
+}
+
 interface TurnResult {
-  partyActions: { [key in Characters]: BattleActions };
+  partyActionResults: { [key in Characters]: PartyActionResult | null };
+  enemyActionResult: EnemyActionResult | null;
   stockCounts: { [key in SphereType]: number };
 }
 
@@ -283,8 +329,54 @@ class BattleState {
   }
 
   executeTurn(turnInputs: TurnInputs): TurnResult {
+    const partyActionResults: Partial<TurnResult['partyActionResults']> = {};
+
+    // Character actions
+    let clearKey = false;
+    for (const [character, battleAction] of Object.entries(turnInputs) as Entries<typeof turnInputs>) {
+      const sphereType = CHARACTER_SPHERE_TYPES[character];
+      if (battleAction === BattleActions.Attack) {
+        const damage =
+          this.partyMemberStatuses[character].atk + this.stockCounts[sphereType] + this.stockCounts[SphereType.Key];
+        this.enemyStatus.hp = Math.max(this.enemyStatus.hp - damage, 0);
+        this.stockCounts[sphereType] = 0;
+        clearKey = true;
+
+        partyActionResults[character] = { battleAction, damage };
+      } else {
+        partyActionResults[character] = { battleAction };
+      }
+    }
+
+    if (clearKey) {
+      this.stockCounts[SphereType.Key] = 0;
+    }
+
+    let enemyActionResult = null;
+    if (this.enemyStatus.hp > 0) {
+      const target = randomChoice(
+        Object.values(Characters).filter((character) => this.partyMemberStatuses[character].hp > 0)
+      );
+
+      let damage = Math.floor(Math.random() * 15) + 20;
+      if (turnInputs[target] === BattleActions.Defend) {
+        const sphereType = CHARACTER_SPHERE_TYPES[target];
+        damage -= this.stockCounts[sphereType] + this.stockCounts[SphereType.Yellow];
+        this.stockCounts[sphereType] = 0;
+        this.stockCounts[SphereType.Yellow] = 0;
+      }
+
+      this.partyMemberStatuses[target].hp = Math.max(this.partyMemberStatuses[target].hp - damage, 0);
+
+      enemyActionResult = {
+        target,
+        damage,
+      };
+    }
+
     return {
-      partyActions: turnInputs,
+      partyActionResults: partyActionResults as TurnResult['partyActionResults'],
+      enemyActionResult,
       stockCounts: this.stockCounts,
     };
   }
@@ -328,18 +420,6 @@ class Skelly {
     ]);
   }
 }
-
-enum Characters {
-  Rojo = 'rojo',
-  Blue = 'blue',
-  Midori = 'midori',
-}
-
-const CHARACTER_COLORS = {
-  [Characters.Rojo]: 0xac311e,
-  [Characters.Blue]: 0x63a09b,
-  [Characters.Midori]: 0x5ad932,
-};
 
 class PartyMember {
   scene: Phaser.Scene;
@@ -486,15 +566,7 @@ class EnemyHealthBar {
   }
 }
 
-enum SphereType {
-  Red = 0,
-  Key,
-  Cyan,
-  Green,
-  Yellow,
-}
-
-const SPHERE_TYPES = [SphereType.Red, SphereType.Key, SphereType.Cyan, SphereType.Green, SphereType.Yellow];
+const SPHERE_TYPES = [SphereType.Red, SphereType.Cyan, SphereType.Green, SphereType.Yellow, SphereType.Key];
 const SPHERE_DIRECTION_OFFSETS = {
   [Direction.Up]: 0,
   [Direction.Right]: 8,
@@ -1100,6 +1172,9 @@ class AttackPhaseState extends State {
       fadeInAnimations.push(partyMember.animateFaded(false));
     }
     await Promise.all(fadeInAnimations);
+
+    scene.currentTurnResult = scene.battleState.executeTurn(scene.currentTurnInputs);
+    console.log(scene.currentTurnResult);
 
     await scene.dialog.animateText('- Attack!', 75, scene.soundText);
   }

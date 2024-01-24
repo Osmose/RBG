@@ -14,6 +14,7 @@
     "@types/lodash.invert": "^4.3.7",
     "gh-pages": "^5.0.0",
     "husky": "^8.0.0",
+    "type-fest": "^4.10.0",
     "typescript": "^5.0.2",
     "vite": "^4.3.9"
   },
