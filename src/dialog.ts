@@ -11,15 +11,21 @@ export default class Dialog {
     scene.load.image('dialogBox', 'ui/dialog_box.png');
   }
 
-  constructor(scene: BaseScene, x: number, y: number) {
+  constructor(scene: BaseScene, x: number, y: number, text?: string) {
     this.scene = scene;
     this.box = scene.add.image(x, y, 'dialogBox');
-    this.text = scene.add.bitmapText(x - this.box.width / 2 + 4, y - this.box.height / 2 + 6, 'sodapop');
+    this.text = scene.add.bitmapText(x - this.box.width / 2 + 4, y - this.box.height / 2 + 6, 'sodapop', text);
     this.text.setTint(0xfffa9b).setMaxWidth(this.box.width - 8);
   }
 
   setText(text: string) {
     this.text.setText(text);
+  }
+
+  setDepth(depth: number) {
+    this.box.setDepth(depth);
+    this.text.setDepth(depth);
+    return this;
   }
 
   async animateText(text: string, step: number, sound?: Phaser.Sound.BaseSound) {

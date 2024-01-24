@@ -32,7 +32,7 @@ const HEALTH_LEFT = 186;
 const HEALTH_TOP = 37;
 
 const PARTY_LEFT = 184;
-const PARTY_TOP = 67;
+const PARTY_TOP = 62;
 const ENEMY_LEFT = 275;
 const ENEMY_TOP = 85;
 
@@ -41,6 +41,10 @@ const DIALOG_TOP = 172;
 
 const ALPHA_FADED = 0.6;
 const ALPHA_UNFADED = 0;
+
+const DEPTH_BACKGROUND = -10;
+const DEPTH_ENTITIES = 0;
+const DEPTH_UI = 10;
 
 enum Characters {
   Rojo = 'rojo',
@@ -151,18 +155,24 @@ export default class BattleScene extends BaseScene {
     PartyMember.create(this);
     ActionChoiceState.create(this);
 
-    this.battleGrid = this.add.tileSprite(196, 114, 326, 104, 'battleGrid');
-    this.battleBorder = this.add.image(190, 120, 'battleBorder');
-    this.battleSphereWindow = this.add.image(SPHERE_WINDOW_LEFT + 58, SPHERE_WINDOW_TOP + 65, 'battleSphereWindow');
-    this.battleSphereStock = this.add.image(SPHERE_STOCK_LEFT + 46, SPHERE_STOCK_TOP + 16, 'battleSphereStock');
-    this.battleSphereWindowOverlay = this.add.rectangle(
-      this.battleSphereWindow.x,
-      this.battleSphereWindow.y,
-      this.battleSphereWindow.width,
-      this.battleSphereWindow.height,
-      0x000000
-    );
-    this.battleSphereWindowOverlay.setDepth(10).setAlpha(ALPHA_FADED);
+    this.battleGrid = this.add.tileSprite(196, 114, 326, 104, 'battleGrid').setDepth(DEPTH_BACKGROUND);
+    this.battleBorder = this.add.image(190, 120, 'battleBorder').setDepth(DEPTH_UI);
+    this.battleSphereWindow = this.add
+      .image(SPHERE_WINDOW_LEFT + 58, SPHERE_WINDOW_TOP + 65, 'battleSphereWindow')
+      .setDepth(DEPTH_UI);
+    this.battleSphereStock = this.add
+      .image(SPHERE_STOCK_LEFT + 46, SPHERE_STOCK_TOP + 16, 'battleSphereStock')
+      .setDepth(DEPTH_UI);
+    this.battleSphereWindowOverlay = this.add
+      .rectangle(
+        this.battleSphereWindow.x,
+        this.battleSphereWindow.y,
+        this.battleSphereWindow.width,
+        this.battleSphereWindow.height,
+        0x000000
+      )
+      .setDepth(DEPTH_UI + 1)
+      .setAlpha(ALPHA_FADED);
 
     this.soundSwap = this.sound.add('swap');
     this.soundClear = this.sound.add('clear');
@@ -188,7 +198,7 @@ export default class BattleScene extends BaseScene {
     this.party = {
       [Characters.Rojo]: new PartyMember(this, Characters.Rojo, PARTY_LEFT + 32, PARTY_TOP + 16),
       [Characters.Blue]: new PartyMember(this, Characters.Blue, PARTY_LEFT + 16, PARTY_TOP + 48),
-      [Characters.Midori]: new PartyMember(this, Characters.Midori, PARTY_LEFT + 32, PARTY_TOP + 80),
+      [Characters.Midori]: new PartyMember(this, Characters.Midori, PARTY_LEFT + 32, PARTY_TOP + 78),
     };
 
     this.battleState = new BattleState(
@@ -233,7 +243,7 @@ export default class BattleScene extends BaseScene {
       this.battleState.enemyStatus.maxHp
     );
 
-    this.dialog = new Dialog(this, DIALOG_LEFT + 82, DIALOG_TOP + 16);
+    this.dialog = new Dialog(this, DIALOG_LEFT + 82, DIALOG_TOP + 16).setDepth(DEPTH_UI);
 
     this.stateMachine = new StateMachine(
       'startActionChoice',
@@ -244,7 +254,7 @@ export default class BattleScene extends BaseScene {
         swapChoice: new SwapChoiceState(),
         swap: new SwapState(),
         solve: new SolveState(),
-        attackPhase: new AttackPhaseState(),
+        turnResult: new TurnResultPhaseState(),
       },
       [this]
     );
@@ -403,8 +413,8 @@ class Skelly {
 
   constructor(scene: BattleScene, x: number, y: number) {
     this.scene = scene;
-    this.ground = scene.add.image(x - 6, y + 23, 'enemySkellyGround');
-    this.sprite = scene.add.sprite(x, y, 'enemySkellyIdle', 0);
+    this.ground = scene.add.image(x - 6, y + 23, 'enemySkellyGround').setDepth(DEPTH_ENTITIES);
+    this.sprite = scene.add.sprite(x, y, 'enemySkellyIdle', 0).setDepth(DEPTH_ENTITIES);
     this.sprite.play('enemySkellyIdle');
   }
 
@@ -430,8 +440,8 @@ class PartyMember {
   static preload(scene: BattleScene) {
     for (const character of Object.values(Characters)) {
       scene.load.spritesheet(`party[${character}]`, `party/${character}.png`, {
-        frameWidth: 32,
-        frameHeight: 32,
+        frameWidth: 64,
+        frameHeight: 48,
       });
       scene.load.image(`party[${character}]Ground`, `party/${character}_ground.png`);
     }
@@ -446,13 +456,40 @@ class PartyMember {
         repeat: -1,
       });
     }
+
+    // Character-specific animations
+    scene.anims.create({
+      key: `party[${Characters.Rojo}]Attack`,
+      frameRate: 10,
+      repeat: 0,
+      frames: scene.anims.generateFrameNumbers(`party[${Characters.Rojo}]`, {
+        frames: [4, 5, 6, 7, 8, 9, 10, 11, 11, 11, 12, 13, 14, 15],
+      }),
+    });
+    scene.anims.create({
+      key: `party[${Characters.Blue}]Attack`,
+      frameRate: 10,
+      repeat: 0,
+      frames: scene.anims.generateFrameNumbers(`party[${Characters.Blue}]`, {
+        start: 4,
+        end: 15,
+      }),
+    });
+    scene.anims.create({
+      key: `party[${Characters.Midori}]Attack`,
+      frameRate: 10,
+      repeat: 0,
+      frames: scene.anims.generateFrameNumbers(`party[${Characters.Midori}]`, {
+        frames: [4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 16, 17, 17],
+      }),
+    });
   }
 
   constructor(scene: BattleScene, character: Characters, x: number, y: number) {
     this.scene = scene;
     this.character = character;
-    this.ground = scene.add.image(x - 1, y + 14, `party[${character}]Ground`);
-    this.sprite = scene.add.sprite(x, y, `party[${character}]`, 0);
+    this.ground = scene.add.image(x - 1, y + 23, `party[${character}]Ground`).setDepth(DEPTH_ENTITIES);
+    this.sprite = scene.add.sprite(x, y, `party[${character}]`, 0).setDepth(DEPTH_ENTITIES);
     this.sprite.play(`party[${character}]Idle`);
   }
 
@@ -466,6 +503,11 @@ class PartyMember {
       animateFaded(this.scene, this.sprite, faded, 400),
       animateFaded(this.scene, this.ground, faded, 400),
     ]);
+  }
+
+  async animateAttack() {
+    await asyncAnimation(this.sprite, `party[${this.character}]Attack`);
+    this.sprite.play(`party[${this.character}]Idle`);
   }
 }
 
@@ -506,18 +548,26 @@ class PartyHealthBar {
   ) {
     this.scene = scene;
     this.character = character;
-    this.barFrame = scene.add.image(barX, barY, 'partyHealthBarFrames', PartyHealthBar.partySpriteIndex[character]);
+    this.barFrame = scene.add
+      .image(barX, barY, 'partyHealthBarFrames', PartyHealthBar.partySpriteIndex[character])
+      .setDepth(DEPTH_UI);
 
-    this.bar1 = scene.add.line(barX - 14, barY, 0, 0, 29, 0, CHARACTER_COLORS[character]);
-    this.bar1.setOrigin(0, 0.5);
-    this.bar1.setLineWidth(0.5);
-    this.bar2 = scene.add.line(barX - 15, barY + 1, 0, 0, 29, 0, CHARACTER_COLORS[character]);
-    this.bar2.setOrigin(0, 0.5);
-    this.bar2.setLineWidth(0.5);
+    this.bar1 = scene.add
+      .line(barX - 14, barY, 0, 0, 29, 0, CHARACTER_COLORS[character])
+      .setOrigin(0, 0.5)
+      .setLineWidth(0.5)
+      .setDepth(DEPTH_UI);
+    this.bar2 = scene.add
+      .line(barX - 15, barY + 1, 0, 0, 29, 0, CHARACTER_COLORS[character])
+      .setOrigin(0, 0.5)
+      .setLineWidth(0.5)
+      .setDepth(DEPTH_UI);
 
-    this.text = new Text(scene, barX + 18, barY - 2, 7, 1, '', { tint: 0xfffa9b });
+    this.text = new Text(scene, barX + 18, barY - 2, 7, 1, '', { tint: 0xfffa9b }).setDepth(DEPTH_UI);
 
-    this.portrait = scene.add.sprite(barX - 25, barY - 5, 'partyPortraits', PartyHealthBar.partySpriteIndex[character]);
+    this.portrait = scene.add
+      .sprite(barX - 25, barY - 5, 'partyPortraits', PartyHealthBar.partySpriteIndex[character])
+      .setDepth(DEPTH_UI);
 
     this.setHealth(currentHealth, maxHealth);
   }
@@ -546,12 +596,16 @@ class EnemyHealthBar {
   }
 
   constructor(scene: BattleScene, barX: number, barY: number, currentHealth: number, maxHealth: number) {
-    this.barFrame = scene.add.image(barX, barY, 'enemyHealthBarFrame');
+    this.barFrame = scene.add.image(barX, barY, 'enemyHealthBarFrame').setDepth(DEPTH_UI);
 
-    this.bar1 = scene.add.rectangle(barX - 24, barY - 1, 59, 2, 0xfff55e);
-    this.bar1.setOrigin(0, 0.5);
-    this.bar2 = scene.add.rectangle(barX - 25, barY + 1, 59, 2, 0xfff55e);
-    this.bar2.setOrigin(0, 0.5);
+    this.bar1 = scene.add
+      .rectangle(barX - 24, barY - 1, 59, 2, 0xfff55e)
+      .setOrigin(0, 0.5)
+      .setDepth(DEPTH_UI);
+    this.bar2 = scene.add
+      .rectangle(barX - 25, barY + 1, 59, 2, 0xfff55e)
+      .setOrigin(0, 0.5)
+      .setDepth(DEPTH_UI);
 
     this.setHealth(currentHealth, maxHealth);
   }
@@ -664,12 +718,9 @@ class Sphere {
     this.gridY = gridY;
     this.index = gridX + gridY * GRID_WIDTH;
     this.type = type;
-    this.sprite = scene.add.sprite(
-      gridX * 14 + SPHERE_WINDOW_LEFT + 9,
-      gridY * 14 + SPHERE_WINDOW_TOP + 9,
-      'battleSpheres',
-      type
-    );
+    this.sprite = scene.add
+      .sprite(gridX * 14 + SPHERE_WINDOW_LEFT + 9, gridY * 14 + SPHERE_WINDOW_TOP + 9, 'battleSpheres', type)
+      .setDepth(DEPTH_UI);
   }
 
   select() {
@@ -698,10 +749,14 @@ class StockCount {
 
   constructor(scene: BattleScene, type: SphereType) {
     this.scene = scene;
-    this.bar = scene.add.image(SPHERE_STOCK_LEFT + 11 + 40, SPHERE_STOCK_TOP + 4 + 6 * type, 'sphereStockBar', type);
-    this.mask = scene.add.rectangle(this.bar.x + 40, this.bar.y, 80, 4, 0x000000);
+    this.bar = scene.add
+      .image(SPHERE_STOCK_LEFT + 11 + 40, SPHERE_STOCK_TOP + 4 + 6 * type, 'sphereStockBar', type)
+      .setDepth(DEPTH_UI);
+    this.mask = scene.add.rectangle(this.bar.x + 40, this.bar.y, 80, 4, 0x000000).setDepth(DEPTH_UI);
     this.mask.setOrigin(1, 0.5);
-    this.text = new Text(scene, SPHERE_STOCK_LEFT + 94, SPHERE_STOCK_TOP + 1 + 6 * type, 2, 1, '0', { tint: 0xfffa9b });
+    this.text = new Text(scene, SPHERE_STOCK_LEFT + 94, SPHERE_STOCK_TOP + 1 + 6 * type, 2, 1, '0', {
+      tint: 0xfffa9b,
+    }).setDepth(DEPTH_UI);
 
     this.setCount(0);
   }
@@ -811,8 +866,18 @@ class ActionChoiceState extends State {
     for (const character of scene.characterOrder) {
       const partyMember = scene.party[character];
       scene.actionSprites[character] = {
-        [BattleActions.Defend]: scene.add.sprite(partyMember.sprite.x - 26, partyMember.sprite.y, 'battleActions', 1),
-        [BattleActions.Attack]: scene.add.sprite(partyMember.sprite.x + 26, partyMember.sprite.y, 'battleActions', 9),
+        [BattleActions.Defend]: scene.add.sprite(
+          partyMember.sprite.x - 26,
+          partyMember.sprite.y + 8,
+          'battleActions',
+          1
+        ),
+        [BattleActions.Attack]: scene.add.sprite(
+          partyMember.sprite.x + 26,
+          partyMember.sprite.y + 8,
+          'battleActions',
+          9
+        ),
       };
     }
 
@@ -1143,11 +1208,11 @@ class SolveState extends State {
       sphere.sprite.setFrame(sphere.type ?? Sphere.EMPTY_FRAME);
     }
 
-    return this.transition('attackPhase');
+    return this.transition('turnResult');
   }
 }
 
-class AttackPhaseState extends State {
+class TurnResultPhaseState extends State {
   async handleEntered(scene: BattleScene) {
     const hideAnimations = [
       asyncTween(scene, {
@@ -1173,9 +1238,22 @@ class AttackPhaseState extends State {
     }
     await Promise.all(fadeInAnimations);
 
-    scene.currentTurnResult = scene.battleState.executeTurn(scene.currentTurnInputs);
-    console.log(scene.currentTurnResult);
+    const { partyActionResults } = (scene.currentTurnResult = scene.battleState.executeTurn(scene.currentTurnInputs));
 
-    await scene.dialog.animateText('- Attack!', 75, scene.soundText);
+    // Animate attacks, if needed
+    if (Object.values(partyActionResults).some((result) => result?.battleAction === BattleActions.Attack)) {
+      await scene.dialog.animateText('- Attack!', 75, scene.soundText);
+      await wait(scene, 100);
+
+      const attackAnimations: Promise<void>[] = [];
+      for (const [character, result] of Object.entries(partyActionResults) as Entries<typeof partyActionResults>) {
+        if (result?.battleAction !== BattleActions.Attack) {
+          continue;
+        }
+
+        attackAnimations.push(scene.party[character].animateAttack());
+        await wait(scene, 600);
+      }
+    }
   }
 }
