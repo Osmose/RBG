@@ -46,6 +46,8 @@ const DEPTH_BACKGROUND = -10;
 const DEPTH_ENTITIES = 0;
 const DEPTH_UI = 10;
 
+const TINT_YELLOW = 0xfffa9b;
+
 enum Characters {
   Rojo = 'rojo',
   Blue = 'blue',
@@ -292,11 +294,13 @@ interface PartyMemberStatus {
 type TurnInputs = { [key in Characters]: BattleActions };
 
 interface PartyActionResultAttack {
+  character: Characters;
   battleAction: BattleActions.Attack;
   damage: number;
 }
 
 interface PartyActionResultDefend {
+  character: Characters;
   battleAction: BattleActions.Defend;
 }
 
@@ -352,9 +356,9 @@ class BattleState {
         this.stockCounts[sphereType] = 0;
         clearKey = true;
 
-        partyActionResults[character] = { battleAction, damage };
+        partyActionResults[character] = { character, battleAction, damage };
       } else {
-        partyActionResults[character] = { battleAction };
+        partyActionResults[character] = { character, battleAction };
       }
     }
 
@@ -437,6 +441,12 @@ class PartyMember {
   sprite: Phaser.GameObjects.Sprite;
   ground: Phaser.GameObjects.Image;
 
+  static attackDamageFrame = {
+    [Characters.Rojo]: 7,
+    [Characters.Blue]: 7,
+    [Characters.Midori]: 9,
+  };
+
   static preload(scene: BattleScene) {
     for (const character of Object.values(Characters)) {
       scene.load.spritesheet(`party[${character}]`, `party/${character}.png`, {
@@ -505,8 +515,19 @@ class PartyMember {
     ]);
   }
 
-  async animateAttack() {
+  async animateAttack(showDamageCallback: () => void) {
+    // Trigger damage numbers on a specific animation frame
+    const handleAnimationUpdate = (
+      _animation: Phaser.Animations.Animation,
+      frame: Phaser.Animations.AnimationFrame
+    ) => {
+      if (frame.index === PartyMember.attackDamageFrame[this.character]) {
+        showDamageCallback();
+      }
+    };
+    this.sprite.on('animationupdate', handleAnimationUpdate);
     await asyncAnimation(this.sprite, `party[${this.character}]Attack`);
+    this.sprite.off('animationupdate', handleAnimationUpdate);
     this.sprite.play(`party[${this.character}]Idle`);
   }
 }
@@ -563,7 +584,7 @@ class PartyHealthBar {
       .setLineWidth(0.5)
       .setDepth(DEPTH_UI);
 
-    this.text = new Text(scene, barX + 18, barY - 2, 7, 1, '', { tint: 0xfffa9b }).setDepth(DEPTH_UI);
+    this.text = new Text(scene, barX + 18, barY - 2, 7, 1, '', { tint: TINT_YELLOW }).setDepth(DEPTH_UI);
 
     this.portrait = scene.add
       .sprite(barX - 25, barY - 5, 'partyPortraits', PartyHealthBar.partySpriteIndex[character])
@@ -755,7 +776,7 @@ class StockCount {
     this.mask = scene.add.rectangle(this.bar.x + 40, this.bar.y, 80, 4, 0x000000).setDepth(DEPTH_UI);
     this.mask.setOrigin(1, 0.5);
     this.text = new Text(scene, SPHERE_STOCK_LEFT + 94, SPHERE_STOCK_TOP + 1 + 6 * type, 2, 1, '0', {
-      tint: 0xfffa9b,
+      tint: TINT_YELLOW,
     }).setDepth(DEPTH_UI);
 
     this.setCount(0);
@@ -785,7 +806,7 @@ class StockCount {
         await wait(this.scene, 100);
         this.text.setText(`${newCount}`);
         await wait(this.scene, 100);
-        this.text.setTint(0xfffa9b);
+        this.text.setTint(TINT_YELLOW);
       })(),
     ]);
 
@@ -959,7 +980,7 @@ class MovePhaseState extends State {
 
   init(scene: BattleScene) {
     this.scene = scene;
-    this.cursor = scene.add.sprite(0, 0, 'battleSpheres', 5);
+    this.cursor = scene.add.sprite(0, 0, 'battleSpheres', 5).setDepth(DEPTH_UI);
     this.cursorX = 0;
     this.cursorY = 0;
     this.cursor.setVisible(false);
@@ -1212,6 +1233,90 @@ class SolveState extends State {
   }
 }
 
+class DamageNumber {
+  scene: BaseScene;
+  x: number;
+  y: number;
+  damageSprite: Phaser.GameObjects.BitmapText;
+  highlightSprite: Phaser.GameObjects.BitmapText;
+  borderSprites: Phaser.GameObjects.BitmapText[];
+
+  static appearFrames = [[]];
+
+  constructor(scene: BaseScene, amount: number, color: number, x: number, y: number) {
+    this.scene = scene;
+    this.x = x;
+    this.y = y;
+    this.borderSprites = [
+      [-1, 0],
+      [0, -1],
+      [1, 0],
+      [0, 1],
+      [1, 2],
+      [2, 1],
+    ].map(([xMod, yMod]) =>
+      scene.add
+        .bitmapText(x + xMod, y + yMod, 'sodapop', amount.toString())
+        .setDepth(DEPTH_UI)
+        .setVisible(false)
+        .setTint(0x000000)
+    );
+    this.highlightSprite = scene.add
+      .bitmapText(x + 1, y + 1, 'sodapop', amount.toString())
+      .setDepth(DEPTH_UI)
+      .setVisible(false)
+      .setTint(color);
+    this.damageSprite = scene.add
+      .bitmapText(x, y, 'sodapop', amount.toString())
+      .setDepth(DEPTH_UI)
+      .setVisible(false)
+      .setTint(TINT_YELLOW);
+  }
+
+  async animateAppear() {
+    // Manual animation because abstracting this is just too annoying right now without a much better animation
+    // abstraction.
+    this.highlightSprite.setVisible(true).setPosition(this.x - 15, this.y + 5);
+    await wait(this.scene, 75);
+
+    this.damageSprite.setVisible(true).setPosition(this.x - 8, this.y - 3);
+    this.highlightSprite.setPosition(this.x - 7, this.y - 2);
+    await wait(this.scene, 75);
+
+    this.damageSprite.setPosition(this.x - 6, this.y + 5);
+    this.highlightSprite.setPosition(this.x - 5, this.y + 4);
+    await wait(this.scene, 75);
+
+    this.damageSprite.setPosition(this.x - 3, this.y - 2);
+    this.highlightSprite.setPosition(this.x - 2, this.y);
+    await wait(this.scene, 75);
+
+    this.damageSprite.setPosition(this.x - 1, this.y + 1);
+    this.highlightSprite.setPosition(this.x, this.y + 1);
+    await wait(this.scene, 75);
+
+    this.damageSprite.setPosition(this.x, this.y);
+    this.highlightSprite.setPosition(this.x + 1, this.y + 1);
+    for (const sprite of this.borderSprites) {
+      sprite.setVisible(true);
+    }
+  }
+
+  async animateDestroy() {
+    this.damageSprite.destroy();
+    this.highlightSprite.setPosition(this.highlightSprite.x + 1, this.highlightSprite.y);
+    for (const sprite of this.borderSprites) {
+      sprite.setPosition(sprite.x + 1, sprite.y);
+    }
+    await wait(this.scene, 75);
+
+    this.highlightSprite.destroy();
+    for (const sprite of this.borderSprites) {
+      sprite.destroy();
+    }
+  }
+}
+
 class TurnResultPhaseState extends State {
   async handleEntered(scene: BattleScene) {
     const hideAnimations = [
@@ -1245,15 +1350,30 @@ class TurnResultPhaseState extends State {
       await scene.dialog.animateText('- Attack!', 75, scene.soundText);
       await wait(scene, 100);
 
-      const attackAnimations: Promise<void>[] = [];
-      for (const [character, result] of Object.entries(partyActionResults) as Entries<typeof partyActionResults>) {
-        if (result?.battleAction !== BattleActions.Attack) {
-          continue;
-        }
+      const attackResults = Object.values(partyActionResults).filter(
+        (result): result is PartyActionResultAttack => result?.battleAction === BattleActions.Attack
+      );
 
-        attackAnimations.push(scene.party[character].animateAttack());
+      // Prepage damage numbers for display
+      const damageNumbers = attackResults.map(
+        ({ character, damage }, index) =>
+          new DamageNumber(scene, damage, CHARACTER_COLORS[character], 272 - 3 * index, 82 + 11 * index)
+      );
+
+      const attackAnimations: Promise<void>[] = [];
+      for (let k = 0; k < attackResults.length; k++) {
+        const { character } = attackResults[k];
+        attackAnimations.push(
+          scene.party[character].animateAttack(() => {
+            damageNumbers[k].animateAppear();
+          })
+        );
         await wait(scene, 600);
       }
+
+      await Promise.all(attackAnimations);
+      await wait(scene, 400);
+      await Promise.all(damageNumbers.map((damageNumber) => damageNumber.animateDestroy()));
     }
   }
 }
