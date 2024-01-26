@@ -94,10 +94,10 @@ export default class BattleScene extends BaseScene {
   party!: { [key in Characters]: PartyMember };
 
   // Health bars
-  healthRojo!: PartyHealthBar;
-  healthBlue!: PartyHealthBar;
-  healthMidori!: PartyHealthBar;
-  healthEnemy!: EnemyHealthBar;
+  healthRojo!: HealthBar;
+  healthBlue!: HealthBar;
+  healthMidori!: HealthBar;
+  healthEnemy!: HealthBar;
 
   // Spheres
   stockCounts!: StockCount[];
@@ -131,8 +131,7 @@ export default class BattleScene extends BaseScene {
     StockCount.preload(this);
     Skelly.preload(this);
     PartyMember.preload(this);
-    PartyHealthBar.preload(this);
-    EnemyHealthBar.preload(this);
+    HealthBar.preload(this);
     ActionChoiceState.preload(this);
     Dialog.preload(this);
 
@@ -213,33 +212,34 @@ export default class BattleScene extends BaseScene {
     );
 
     const pStatus = this.battleState.partyMemberStatuses;
-    this.healthRojo = new PartyHealthBar(
+    this.healthRojo = new HealthBar(
       this,
-      Characters.Rojo,
+      HealthBarType.Rojo,
       HEALTH_LEFT + 23,
       HEALTH_TOP + 3,
       pStatus[Characters.Rojo].hp,
       pStatus[Characters.Rojo].maxHp
     );
-    this.healthBlue = new PartyHealthBar(
+    this.healthBlue = new HealthBar(
       this,
-      Characters.Blue,
+      HealthBarType.Blue,
       HEALTH_LEFT + 20,
       HEALTH_TOP + 14,
       pStatus[Characters.Blue].hp,
       pStatus[Characters.Blue].maxHp
     );
-    this.healthMidori = new PartyHealthBar(
+    this.healthMidori = new HealthBar(
       this,
-      Characters.Midori,
+      HealthBarType.Midori,
       HEALTH_LEFT + 17,
       HEALTH_TOP + 25,
       pStatus[Characters.Midori].hp,
       pStatus[Characters.Midori].maxHp
     );
-    this.healthEnemy = new EnemyHealthBar(
+    this.healthEnemy = new HealthBar(
       this,
-      HEALTH_LEFT + 120,
+      HealthBarType.Enemy,
+      HEALTH_LEFT + 124,
       HEALTH_TOP + 14,
       this.battleState.enemyStatus.hp,
       this.battleState.enemyStatus.maxHp
@@ -532,23 +532,34 @@ class PartyMember {
   }
 }
 
-class PartyHealthBar {
+enum HealthBarType {
+  Rojo = 0,
+  Blue = 1,
+  Midori = 2,
+  Enemy = 3,
+}
+
+class HealthBar {
   scene: Phaser.Scene;
-  character: Characters;
+  type: HealthBarType;
+  fullBarWidth: number;
+  halfBarWidth: number;
+  halfBarHeight: number;
 
   barFrame: Phaser.GameObjects.Image;
-  bar1: Phaser.GameObjects.Line;
-  bar2: Phaser.GameObjects.Line;
-  text: Text;
+  bar1: Phaser.GameObjects.Rectangle;
+  bar2: Phaser.GameObjects.Rectangle;
+  text?: Text;
   portrait: Phaser.GameObjects.Sprite;
 
   maxHealth = 0;
   currentHealth = 0;
 
-  static partySpriteIndex = {
-    [Characters.Rojo]: 0,
-    [Characters.Blue]: 1,
-    [Characters.Midori]: 2,
+  static barColors = {
+    [HealthBarType.Rojo]: CHARACTER_COLORS[Characters.Rojo],
+    [HealthBarType.Blue]: CHARACTER_COLORS[Characters.Blue],
+    [HealthBarType.Midori]: CHARACTER_COLORS[Characters.Midori],
+    [HealthBarType.Enemy]: 0xfff55e,
   };
 
   static preload(scene: BattleScene) {
@@ -556,38 +567,58 @@ class PartyHealthBar {
       frameWidth: 34,
       frameHeight: 6,
     });
-    scene.load.spritesheet('partyPortraits', 'ui/party_portraits.png', { frameWidth: 16, frameHeight: 16 });
+    scene.load.spritesheet('portraits', 'ui/portraits.png', { frameWidth: 16, frameHeight: 16 });
+    scene.load.image('enemyHealthBarFrame', 'ui/enemy_health_bar_frame.png');
   }
 
   constructor(
     scene: BattleScene,
-    character: Characters,
+    type: HealthBarType,
     barX: number,
     barY: number,
     currentHealth: number,
     maxHealth: number
   ) {
     this.scene = scene;
-    this.character = character;
-    this.barFrame = scene.add
-      .image(barX, barY, 'partyHealthBarFrames', PartyHealthBar.partySpriteIndex[character])
-      .setDepth(DEPTH_UI);
+    this.type = type;
+
+    if (type === HealthBarType.Enemy) {
+      this.barFrame = scene.add.image(barX, barY, 'enemyHealthBarFrame').setDepth(DEPTH_UI);
+    } else {
+      this.barFrame = scene.add.image(barX, barY, 'partyHealthBarFrames', type).setDepth(DEPTH_UI);
+    }
+
+    this.fullBarWidth = this.barFrame.width - (type === HealthBarType.Enemy ? 5 : 6);
+    this.halfBarWidth = Math.floor(this.fullBarWidth / 2);
+    this.halfBarHeight = (this.barFrame.height - 4) / 2;
 
     this.bar1 = scene.add
-      .line(barX - 14, barY, 0, 0, 29, 0, CHARACTER_COLORS[character])
+      .rectangle(
+        barX - this.halfBarWidth,
+        barY - this.halfBarHeight / 2,
+        this.fullBarWidth,
+        this.halfBarHeight,
+        HealthBar.barColors[type]
+      )
       .setOrigin(0, 0.5)
-      .setLineWidth(0.5)
       .setDepth(DEPTH_UI);
     this.bar2 = scene.add
-      .line(barX - 15, barY + 1, 0, 0, 29, 0, CHARACTER_COLORS[character])
+      .rectangle(
+        barX - this.halfBarWidth - 1,
+        barY + this.halfBarHeight / 2,
+        this.fullBarWidth,
+        this.halfBarHeight,
+        HealthBar.barColors[type]
+      )
       .setOrigin(0, 0.5)
-      .setLineWidth(0.5)
       .setDepth(DEPTH_UI);
 
-    this.text = new Text(scene, barX + 18, barY - 2, 7, 1, '', { tint: TINT_YELLOW }).setDepth(DEPTH_UI);
+    if (type !== HealthBarType.Enemy) {
+      this.text = new Text(scene, barX + 18, barY - 2, 7, 1, '', { tint: TINT_YELLOW }).setDepth(DEPTH_UI);
+    }
 
     this.portrait = scene.add
-      .sprite(barX - 25, barY - 5, 'partyPortraits', PartyHealthBar.partySpriteIndex[character])
+      .sprite(barX - this.barFrame.width / 2 - 8, barY + this.barFrame.height / 2 - 8, 'portraits', type)
       .setDepth(DEPTH_UI);
 
     this.setHealth(currentHealth, maxHealth);
@@ -598,46 +629,35 @@ class PartyHealthBar {
     this.maxHealth = maxHealth ?? this.maxHealth;
 
     const percent = this.currentHealth / this.maxHealth;
-    this.bar1.setTo(0, 0, Math.ceil(percent * 29), 0);
-    this.bar2.setTo(0, 0, Math.ceil(percent * 29), 0);
-    this.text.setText(`${this.currentHealth.toString().padStart(3, ' ')}/${this.maxHealth}`);
-  }
-}
-
-class EnemyHealthBar {
-  barFrame: Phaser.GameObjects.Image;
-  bar1: Phaser.GameObjects.Rectangle;
-  bar2: Phaser.GameObjects.Rectangle;
-
-  maxHealth = 0;
-  currentHealth = 0;
-
-  static preload(scene: BattleScene) {
-    scene.load.image('enemyHealthBarFrame', 'ui/enemy_health_bar_frame.png');
+    this.bar1.width = Math.ceil(percent * this.fullBarWidth);
+    this.bar2.width = Math.ceil(percent * this.fullBarWidth);
+    this.text?.setText(`${this.currentHealth.toString().padStart(3, ' ')}/${this.maxHealth}`);
   }
 
-  constructor(scene: BattleScene, barX: number, barY: number, currentHealth: number, maxHealth: number) {
-    this.barFrame = scene.add.image(barX, barY, 'enemyHealthBarFrame').setDepth(DEPTH_UI);
+  async animateDamage(damage: number, color: number = 0xfff55e) {
+    const startWidth = this.bar1.width;
+    this.setHealth(this.currentHealth - damage);
+    const damageWidth = startWidth - this.bar1.width;
 
-    this.bar1 = scene.add
-      .rectangle(barX - 24, barY - 1, 59, 2, 0xfff55e)
+    const damageBar1 = this.scene.add
+      .rectangle(this.bar1.x + this.bar1.width, this.bar1.y, damageWidth, this.bar1.height, color)
       .setOrigin(0, 0.5)
       .setDepth(DEPTH_UI);
-    this.bar2 = scene.add
-      .rectangle(barX - 25, barY + 1, 59, 2, 0xfff55e)
+    const damageBar2 = this.scene.add
+      .rectangle(this.bar2.x + this.bar2.width, this.bar2.y, damageWidth, this.bar2.height, color)
       .setOrigin(0, 0.5)
       .setDepth(DEPTH_UI);
 
-    this.setHealth(currentHealth, maxHealth);
-  }
-
-  setHealth(currentHealth: number, maxHealth?: number) {
-    this.currentHealth = currentHealth;
-    this.maxHealth = maxHealth ?? this.maxHealth;
-
-    const percent = this.currentHealth / this.maxHealth;
-    this.bar1.width = Math.ceil(percent * 59);
-    this.bar2.width = Math.ceil(percent * 59);
+    await asyncTween(this.scene, {
+      targets: [damageBar1, damageBar2],
+      width: 0,
+      delay: 400,
+      duration: 400,
+      completeDelay: 100,
+      ease: 'Cubic.out',
+    });
+    damageBar1.destroy();
+    damageBar2.destroy();
   }
 }
 
@@ -1362,10 +1382,11 @@ class TurnResultPhaseState extends State {
 
       const attackAnimations: Promise<void>[] = [];
       for (let k = 0; k < attackResults.length; k++) {
-        const { character } = attackResults[k];
+        const { character, damage } = attackResults[k];
         attackAnimations.push(
           scene.party[character].animateAttack(() => {
             damageNumbers[k].animateAppear();
+            scene.healthEnemy.animateDamage(damage, CHARACTER_COLORS[character]);
           })
         );
         await wait(scene, 600);
