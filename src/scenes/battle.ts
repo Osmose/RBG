@@ -110,6 +110,7 @@ export default class BattleScene extends BaseScene {
   soundSelect!: Phaser.Sound.BaseSound;
   soundMoveCursor!: Phaser.Sound.BaseSound;
   soundText!: Phaser.Sound.BaseSound;
+  soundPartyAttack!: { [key in Characters]: Phaser.Sound.BaseSound };
 
   // Battle logic
   battleState!: BattleState;
@@ -146,6 +147,9 @@ export default class BattleScene extends BaseScene {
     this.load.audio('select', 'audio/select.mp3');
     this.load.audio('moveCursor', 'audio/move_cursor.mp3');
     this.load.audio('soundText', 'audio/text.mp3');
+    this.load.audio('soundRojoAttack', 'audio/rojo_attack.mp3');
+    this.load.audio('soundBlueAttack', 'audio/blue_attack.mp3');
+    this.load.audio('soundMidoriAttack', 'audio/midori_attack.mp3');
   }
 
   create() {
@@ -181,6 +185,11 @@ export default class BattleScene extends BaseScene {
     this.soundSelect = this.sound.add('select');
     this.soundMoveCursor = this.sound.add('moveCursor');
     this.soundText = this.sound.add('soundText');
+    this.soundPartyAttack = {
+      [Characters.Rojo]: this.sound.add('soundRojoAttack'),
+      [Characters.Blue]: this.sound.add('soundBlueAttack'),
+      [Characters.Midori]: this.sound.add('soundMidoriAttack'),
+    };
 
     this.spheres = [];
     for (let y = 0; y < GRID_HEIGHT; y++) {
@@ -413,6 +422,12 @@ class Skelly {
       frames: scene.anims.generateFrameNumbers('enemySkelly', { start: 0, end: 3 }),
       repeat: -1,
     });
+    scene.anims.create({
+      key: 'enemySkellyHurt',
+      frameRate: 10,
+      frames: scene.anims.generateFrameNumbers('enemySkelly', { start: 4, end: 5 }),
+      repeat: 0,
+    });
   }
 
   constructor(scene: BattleScene, x: number, y: number) {
@@ -433,10 +448,15 @@ class Skelly {
       animateFaded(this.scene, this.ground, faded, 400),
     ]);
   }
+
+  async animateHurt() {
+    await asyncAnimation(this.sprite, 'enemySkellyHurt');
+    this.sprite.play('enemySkellyIdle');
+  }
 }
 
 class PartyMember {
-  scene: Phaser.Scene;
+  scene: BattleScene;
   character: Characters;
   sprite: Phaser.GameObjects.Sprite;
   ground: Phaser.GameObjects.Image;
@@ -455,6 +475,7 @@ class PartyMember {
       });
       scene.load.image(`party[${character}]Ground`, `party/${character}_ground.png`);
     }
+    scene.load.spritesheet('partyAttackEffects', 'effects/party_attacks.png', { frameWidth: 96, frameHeight: 96 });
   }
 
   static create(scene: BattleScene) {
@@ -493,6 +514,30 @@ class PartyMember {
         frames: [4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 16, 17, 17],
       }),
     });
+    scene.anims.create({
+      key: `party[${Characters.Rojo}]AttackEffect`,
+      frameRate: 10,
+      repeat: 0,
+      frames: scene.anims.generateFrameNumbers('partyAttackEffects', {
+        frames: [0, 0, 0, 1, 2, 3, 4, 5],
+      }),
+    });
+    scene.anims.create({
+      key: `party[${Characters.Blue}]AttackEffect`,
+      frameRate: 10,
+      repeat: 0,
+      frames: scene.anims.generateFrameNumbers('partyAttackEffects', {
+        frames: [0, 0, 6, 7, 8, 9, 10, 11, 12, 13],
+      }),
+    });
+    scene.anims.create({
+      key: `party[${Characters.Midori}]AttackEffect`,
+      frameRate: 10,
+      repeat: 0,
+      frames: scene.anims.generateFrameNumbers('partyAttackEffects', {
+        frames: [0, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24],
+      }),
+    });
   }
 
   constructor(scene: BattleScene, character: Characters, x: number, y: number) {
@@ -526,6 +571,16 @@ class PartyMember {
       }
     };
     this.sprite.on('animationupdate', handleAnimationUpdate);
+
+    // Effect frames are timed to match attack so we can play it without awaiting
+    const effectSprite = this.scene.add.sprite(
+      this.scene.enemySkelly.sprite.x,
+      this.scene.enemySkelly.sprite.y,
+      'partyAttackEffects',
+      0
+    );
+    asyncAnimation(effectSprite, `party[${this.character}]AttackEffect`).then(() => effectSprite.destroy());
+
     await asyncAnimation(this.sprite, `party[${this.character}]Attack`);
     this.sprite.off('animationupdate', handleAnimationUpdate);
     this.sprite.play(`party[${this.character}]Idle`);
@@ -1387,8 +1442,10 @@ class TurnResultPhaseState extends State {
           scene.party[character].animateAttack(() => {
             damageNumbers[k].animateAppear();
             scene.healthEnemy.animateDamage(damage, CHARACTER_COLORS[character]);
+            scene.enemySkelly.animateHurt();
           })
         );
+        scene.soundPartyAttack[character].play();
         await wait(scene, 600);
       }
 
