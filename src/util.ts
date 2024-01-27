@@ -232,3 +232,58 @@ export async function animateFaded(
     },
   });
 }
+
+export async function forEachTween<T>(
+  scene: Phaser.Scene,
+  values: T[],
+  frameDuration: number,
+  callback: (value: T) => void
+) {
+  return asyncCounter(scene, {
+    from: 0,
+    to: values.length - 1,
+    duration: frameDuration * values.length,
+    ease(v: number) {
+      return Phaser.Math.Easing.Stepped(v, values.length - 1);
+    },
+    onUpdate(tween) {
+      callback(values[tween.getValue()]);
+    },
+  });
+}
+
+export async function relativePositionTween(
+  scene: Phaser.Scene,
+  targets: Phaser.GameObjects.Components.Transform[],
+  positions: Phaser.Types.Math.Vector2Like[],
+  frameDuration: number
+) {
+  const originalPositions = targets.map((target) => ({ x: target.x, y: target.y }));
+  await forEachTween(scene, positions, frameDuration, ({ x, y }) => {
+    for (let k = 0; k < targets.length; k++) {
+      const target = targets[k];
+      target.x = originalPositions[k].x + (x ?? 0);
+      target.y = originalPositions[k].y + (y ?? 0);
+    }
+  });
+}
+
+export enum ShakeAxis {
+  X = 'x',
+  Y = 'y',
+}
+
+export async function shake(
+  scene: Phaser.Scene,
+  targets: Phaser.GameObjects.Components.Transform[],
+  axis: ShakeAxis,
+  amounts: number[],
+  frameDuration: number
+) {
+  return relativePositionTween(
+    scene,
+    targets,
+    amounts.map((amount) => ({ [axis]: amount })),
+    frameDuration
+  );
+}

@@ -13,8 +13,10 @@ import {
   wait,
   setFaded,
   animateFaded,
+  shake,
+  ShakeAxis,
+  forEachTween,
 } from 'gate/util';
-import Text from 'gate/text';
 import Phaser from 'phaser';
 import BaseScene from 'gate/scenes/base';
 import Menu, { horizontalMenuItems } from 'gate/menu';
@@ -33,7 +35,7 @@ const HEALTH_TOP = 37;
 
 const PARTY_LEFT = 184;
 const PARTY_TOP = 62;
-const ENEMY_LEFT = 275;
+const ENEMY_LEFT = 259;
 const ENEMY_TOP = 85;
 
 const DIALOG_LEFT = 178;
@@ -46,7 +48,9 @@ const DEPTH_BACKGROUND = -10;
 const DEPTH_ENTITIES = 0;
 const DEPTH_UI = 10;
 
-const TINT_YELLOW = 0xfffa9b;
+const TINT_CREAM = 0xfffa9b;
+const TINT_YELLOW = 0xfff55e;
+const TINT_RED = 0xac311e;
 
 enum Characters {
   Rojo = 'rojo',
@@ -89,15 +93,11 @@ export default class BattleScene extends BaseScene {
 
   // Enemies
   enemySkelly!: Skelly;
+  healthEnemy!: HealthBar;
 
   // Party
   party!: { [key in Characters]: PartyMember };
-
-  // Health bars
-  healthRojo!: HealthBar;
-  healthBlue!: HealthBar;
-  healthMidori!: HealthBar;
-  healthEnemy!: HealthBar;
+  partyHealth!: { [key in Characters]: HealthBar };
 
   // Spheres
   stockCounts!: StockCount[];
@@ -128,7 +128,6 @@ export default class BattleScene extends BaseScene {
 
   preload() {
     Sphere.preload(this);
-    Text.preload(this);
     StockCount.preload(this);
     Skelly.preload(this);
     PartyMember.preload(this);
@@ -140,6 +139,8 @@ export default class BattleScene extends BaseScene {
     this.load.image('battleGrid', 'ui/battle_grid.png');
     this.load.image('battleSphereWindow', 'ui/battle_sphere_window.png');
     this.load.image('battleSphereStock', 'ui/color_stock.png');
+
+    this.load.bitmapFont('numbers', 'ui/numbers.png', 'ui/numbers.fnt');
 
     this.load.audio('swap', 'audio/swap.mp3');
     this.load.audio('clear', 'audio/clear.mp3');
@@ -221,30 +222,32 @@ export default class BattleScene extends BaseScene {
     );
 
     const pStatus = this.battleState.partyMemberStatuses;
-    this.healthRojo = new HealthBar(
-      this,
-      HealthBarType.Rojo,
-      HEALTH_LEFT + 23,
-      HEALTH_TOP + 3,
-      pStatus[Characters.Rojo].hp,
-      pStatus[Characters.Rojo].maxHp
-    );
-    this.healthBlue = new HealthBar(
-      this,
-      HealthBarType.Blue,
-      HEALTH_LEFT + 20,
-      HEALTH_TOP + 14,
-      pStatus[Characters.Blue].hp,
-      pStatus[Characters.Blue].maxHp
-    );
-    this.healthMidori = new HealthBar(
-      this,
-      HealthBarType.Midori,
-      HEALTH_LEFT + 17,
-      HEALTH_TOP + 25,
-      pStatus[Characters.Midori].hp,
-      pStatus[Characters.Midori].maxHp
-    );
+    this.partyHealth = {
+      [Characters.Rojo]: new HealthBar(
+        this,
+        HealthBarType.Rojo,
+        HEALTH_LEFT + 23,
+        HEALTH_TOP + 3,
+        pStatus[Characters.Rojo].hp,
+        pStatus[Characters.Rojo].maxHp
+      ),
+      [Characters.Blue]: new HealthBar(
+        this,
+        HealthBarType.Blue,
+        HEALTH_LEFT + 20,
+        HEALTH_TOP + 14,
+        pStatus[Characters.Blue].hp,
+        pStatus[Characters.Blue].maxHp
+      ),
+      [Characters.Midori]: new HealthBar(
+        this,
+        HealthBarType.Midori,
+        HEALTH_LEFT + 17,
+        HEALTH_TOP + 25,
+        pStatus[Characters.Midori].hp,
+        pStatus[Characters.Midori].maxHp
+      ),
+    };
     this.healthEnemy = new HealthBar(
       this,
       HealthBarType.Enemy,
@@ -406,12 +409,12 @@ class BattleState {
 }
 
 class Skelly {
-  scene: Phaser.Scene;
+  scene: BattleScene;
   sprite: Phaser.GameObjects.Sprite;
   ground: Phaser.GameObjects.Image;
 
   static preload(scene: BattleScene) {
-    scene.load.spritesheet('enemySkelly', 'enemies/skelly.png', { frameWidth: 64, frameHeight: 64 });
+    scene.load.spritesheet('enemySkelly', 'enemies/skelly.png', { frameWidth: 80, frameHeight: 64 });
     scene.load.image('enemySkellyGround', 'enemies/skelly_ground.png');
   }
 
@@ -428,11 +431,17 @@ class Skelly {
       frames: scene.anims.generateFrameNumbers('enemySkelly', { start: 4, end: 5 }),
       repeat: 0,
     });
+    scene.anims.create({
+      key: 'enemySkellyAttack',
+      frameRate: 10,
+      frames: scene.anims.generateFrameNumbers('enemySkelly', { start: 6, end: 18 }),
+      repeat: 0,
+    });
   }
 
   constructor(scene: BattleScene, x: number, y: number) {
     this.scene = scene;
-    this.ground = scene.add.image(x - 6, y + 23, 'enemySkellyGround').setDepth(DEPTH_ENTITIES);
+    this.ground = scene.add.image(x + 2, y + 23, 'enemySkellyGround').setDepth(DEPTH_ENTITIES);
     this.sprite = scene.add.sprite(x, y, 'enemySkellyIdle', 0).setDepth(DEPTH_ENTITIES);
     this.sprite.play('enemySkellyIdle');
   }
@@ -451,6 +460,25 @@ class Skelly {
 
   async animateHurt() {
     await asyncAnimation(this.sprite, 'enemySkellyHurt');
+    this.sprite.play('enemySkellyIdle');
+  }
+
+  async animateAttack(onHit?: () => void) {
+    const handleAnimationUpdate = (
+      _animation: Phaser.Animations.Animation,
+      frame: Phaser.Animations.AnimationFrame
+    ) => {
+      if (frame.index === 8) {
+        this.sprite.off('animationupdate', handleAnimationUpdate);
+        onHit?.();
+
+        // Ground shake
+        shake(this.scene, [this.ground], ShakeAxis.Y, [1, -1, 0], 50);
+      }
+    };
+    this.sprite.on('animationupdate', handleAnimationUpdate);
+
+    await asyncAnimation(this.sprite, 'enemySkellyAttack');
     this.sprite.play('enemySkellyIdle');
   }
 }
@@ -604,7 +632,8 @@ class HealthBar {
   barFrame: Phaser.GameObjects.Image;
   bar1: Phaser.GameObjects.Rectangle;
   bar2: Phaser.GameObjects.Rectangle;
-  text?: Text;
+  currentHealthText?: Phaser.GameObjects.BitmapText;
+  maxHealthText?: Phaser.GameObjects.BitmapText;
   portrait: Phaser.GameObjects.Sprite;
 
   maxHealth = 0;
@@ -614,7 +643,7 @@ class HealthBar {
     [HealthBarType.Rojo]: CHARACTER_COLORS[Characters.Rojo],
     [HealthBarType.Blue]: CHARACTER_COLORS[Characters.Blue],
     [HealthBarType.Midori]: CHARACTER_COLORS[Characters.Midori],
-    [HealthBarType.Enemy]: 0xfff55e,
+    [HealthBarType.Enemy]: TINT_YELLOW,
   };
 
   static preload(scene: BattleScene) {
@@ -669,7 +698,15 @@ class HealthBar {
       .setDepth(DEPTH_UI);
 
     if (type !== HealthBarType.Enemy) {
-      this.text = new Text(scene, barX + 18, barY - 2, 7, 1, '', { tint: TINT_YELLOW }).setDepth(DEPTH_UI);
+      this.currentHealthText = scene.add
+        .bitmapText(barX + 33, barY - 2, 'numbers', '')
+        .setOrigin(1, 0)
+        .setTint(TINT_CREAM)
+        .setDepth(DEPTH_UI);
+      this.maxHealthText = scene.add
+        .bitmapText(barX + 33, barY - 2, 'numbers', '')
+        .setTint(TINT_CREAM)
+        .setDepth(DEPTH_UI);
     }
 
     this.portrait = scene.add
@@ -686,10 +723,11 @@ class HealthBar {
     const percent = this.currentHealth / this.maxHealth;
     this.bar1.width = Math.ceil(percent * this.fullBarWidth);
     this.bar2.width = Math.ceil(percent * this.fullBarWidth);
-    this.text?.setText(`${this.currentHealth.toString().padStart(3, ' ')}/${this.maxHealth}`);
+    this.currentHealthText?.setText(this.currentHealth.toString().padStart(3, ' '));
+    this.maxHealthText?.setText(`/${this.maxHealth}`);
   }
 
-  async animateDamage(damage: number, color: number = 0xfff55e) {
+  async animateDamage(damage: number, color: number = TINT_YELLOW, shouldShake = true) {
     const startWidth = this.bar1.width;
     this.setHealth(this.currentHealth - damage);
     const damageWidth = startWidth - this.bar1.width;
@@ -703,14 +741,58 @@ class HealthBar {
       .setOrigin(0, 0.5)
       .setDepth(DEPTH_UI);
 
-    await asyncTween(this.scene, {
-      targets: [damageBar1, damageBar2],
-      width: 0,
-      delay: 400,
-      duration: 400,
-      completeDelay: 100,
-      ease: 'Cubic.out',
-    });
+    // Hurt face
+    this.portrait.setFrame(this.type + 4);
+
+    const animations = [
+      asyncTween(this.scene, {
+        targets: [damageBar1, damageBar2],
+        width: 0,
+        delay: 400,
+        duration: 400,
+        completeDelay: 100,
+        ease: 'Cubic.out',
+      }),
+    ];
+
+    // Shake bars and portrait
+    if (shouldShake) {
+      animations.push(
+        shake(
+          this.scene,
+          [this.barFrame, this.bar1, this.bar2, damageBar1, damageBar2],
+          ShakeAxis.X,
+          [-2, 1, -1, 0],
+          50
+        ),
+        shake(this.scene, [this.portrait], ShakeAxis.X, [-1, 1, 0], 50)
+      );
+
+      // Shake and tint current health if available too
+      if (this.currentHealthText) {
+        const originalX = this.currentHealthText.x;
+        animations.push(
+          forEachTween(
+            this.scene,
+            [
+              [TINT_RED, 3],
+              [TINT_YELLOW, -2],
+              [null, 0],
+            ],
+            50,
+            ([tint, xMod]) => {
+              this.currentHealthText?.setTint(tint ?? TINT_CREAM);
+              this.currentHealthText?.setX(originalX + (xMod ?? 0));
+            }
+          )
+        );
+      }
+    }
+    await Promise.all(animations);
+
+    // Un-hurt face
+    this.portrait.setFrame(this.type);
+
     damageBar1.destroy();
     damageBar2.destroy();
   }
@@ -836,7 +918,7 @@ class StockCount {
   scene: BattleScene;
   bar: Phaser.GameObjects.Image;
   mask: Phaser.GameObjects.Rectangle;
-  text: Text;
+  text: Phaser.GameObjects.BitmapText;
   count!: number;
 
   static preload(scene: BattleScene) {
@@ -850,9 +932,10 @@ class StockCount {
       .setDepth(DEPTH_UI);
     this.mask = scene.add.rectangle(this.bar.x + 40, this.bar.y, 80, 4, 0x000000).setDepth(DEPTH_UI);
     this.mask.setOrigin(1, 0.5);
-    this.text = new Text(scene, SPHERE_STOCK_LEFT + 94, SPHERE_STOCK_TOP + 1 + 6 * type, 2, 1, '0', {
-      tint: TINT_YELLOW,
-    }).setDepth(DEPTH_UI);
+    this.text = scene.add
+      .bitmapText(SPHERE_STOCK_LEFT + 94, SPHERE_STOCK_TOP + 1 + 6 * type, 'numbers', '')
+      .setTint(TINT_CREAM)
+      .setDepth(DEPTH_UI);
 
     this.setCount(0);
   }
@@ -881,7 +964,7 @@ class StockCount {
         await wait(this.scene, 100);
         this.text.setText(`${newCount}`);
         await wait(this.scene, 100);
-        this.text.setTint(TINT_YELLOW);
+        this.text.setTint(TINT_CREAM);
       })(),
     ]);
 
@@ -1345,7 +1428,7 @@ class DamageNumber {
       .bitmapText(x, y, 'sodapop', amount.toString())
       .setDepth(DEPTH_UI)
       .setVisible(false)
-      .setTint(TINT_YELLOW);
+      .setTint(TINT_CREAM);
   }
 
   async animateAppear() {
@@ -1418,11 +1501,13 @@ class TurnResultPhaseState extends State {
     }
     await Promise.all(fadeInAnimations);
 
-    const { partyActionResults } = (scene.currentTurnResult = scene.battleState.executeTurn(scene.currentTurnInputs));
+    const { partyActionResults, enemyActionResult } = (scene.currentTurnResult = scene.battleState.executeTurn(
+      scene.currentTurnInputs
+    ));
 
     // Animate attacks, if needed
     if (Object.values(partyActionResults).some((result) => result?.battleAction === BattleActions.Attack)) {
-      await scene.dialog.animateText('- Attack!', 75, scene.soundText);
+      await scene.dialog.animateScript('-Attack!', 75, scene.soundText);
       await wait(scene, 100);
 
       const attackResults = Object.values(partyActionResults).filter(
@@ -1441,7 +1526,7 @@ class TurnResultPhaseState extends State {
         attackAnimations.push(
           scene.party[character].animateAttack(() => {
             damageNumbers[k].animateAppear();
-            scene.healthEnemy.animateDamage(damage, CHARACTER_COLORS[character]);
+            scene.healthEnemy.animateDamage(damage, CHARACTER_COLORS[character], false);
             scene.enemySkelly.animateHurt();
           })
         );
@@ -1452,6 +1537,22 @@ class TurnResultPhaseState extends State {
       await Promise.all(attackAnimations);
       await wait(scene, 400);
       await Promise.all(damageNumbers.map((damageNumber) => damageNumber.animateDestroy()));
+    }
+
+    if (enemyActionResult) {
+      const { target, damage } = enemyActionResult;
+      await scene.dialog.animateScript('-The <red>Enemy</red> strikes\n  back!', 75, scene.soundText);
+
+      const enemyAttackAnimations: Promise<void>[] = [
+        scene.enemySkelly.animateAttack(() => {
+          enemyAttackAnimations.push(
+            shake(scene, [scene.dialog.box], ShakeAxis.Y, [2, -1, 0], 50),
+            shake(scene, [scene.dialog.text], ShakeAxis.Y, [0, 2, -1, 0], 50),
+            scene.partyHealth[target].animateDamage(damage)
+          );
+        }),
+      ];
+      await Promise.all(enemyAttackAnimations);
     }
   }
 }

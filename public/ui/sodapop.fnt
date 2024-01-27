@@ -6,7 +6,7 @@
     <page id="0" file="sodapop_0.png" />
   </pages>
   <chars count="96">
-    <char id="32" x="94" y="30" width="1" height="1" xoffset="0" yoffset="0" xadvance="1" page="0" chnl="15" />
+    <char id="32" x="94" y="30" width="1" height="1" xoffset="0" yoffset="0" xadvance="4" page="0" chnl="15" />
     <char id="33" x="40" y="41" width="5" height="9" xoffset="0" yoffset="-3" xadvance="6" page="0" chnl="15" />
     <char id="34" x="8" y="66" width="5" height="3" xoffset="0" yoffset="-3" xadvance="6" page="0" chnl="15" />
     <char id="35" x="52" y="0" width="9" height="9" xoffset="0" yoffset="-3" xadvance="10" page="0" chnl="15" />
