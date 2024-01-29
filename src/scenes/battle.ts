@@ -420,6 +420,7 @@ class Skelly {
   static preload(scene: BattleScene) {
     scene.load.spritesheet('enemySkelly', 'enemies/skelly.png', { frameWidth: 80, frameHeight: 64 });
     scene.load.image('enemySkellyGround', 'enemies/skelly_ground.png');
+    scene.load.spritesheet('enemySkellyAttackEffect', 'effects/enemy_attack.png', { frameWidth: 96, frameHeight: 80 });
   }
 
   static create(scene: BattleScene) {
@@ -439,6 +440,14 @@ class Skelly {
       key: 'enemySkellyAttack',
       frameRate: 10,
       frames: scene.anims.generateFrameNumbers('enemySkelly', { start: 6, end: 18 }),
+      repeat: 0,
+    });
+    scene.anims.create({
+      key: 'enemySkellyAttackEffect',
+      frameRate: 10,
+      frames: scene.anims.generateFrameNumbers('enemySkellyAttackEffect', {
+        frames: [7, 7, 7, 0, 1, 2, 1, 3, 4, 5, 5, 6],
+      }),
       repeat: 0,
     });
   }
@@ -484,6 +493,11 @@ class Skelly {
 
     await asyncAnimation(this.sprite, 'enemySkellyAttack');
     this.sprite.play('enemySkellyIdle');
+  }
+
+  async animateAttackEffect(x: number, y: number) {
+    const effectSprite = this.scene.add.sprite(x, y, 'enemySkellyAttackEffect', 7);
+    return asyncAnimation(effectSprite, `enemySkellyAttackEffect`).then(() => effectSprite.destroy());
   }
 }
 
@@ -984,8 +998,6 @@ class StockCount {
 
 class StartActionChoiceState extends State {
   async handleEntered(scene: BattleScene) {
-    await wait(scene, 500);
-
     const fadeTweens = [scene.enemySkelly.animateFaded(true)];
     for (const character of scene.characterOrder.slice(1)) {
       fadeTweens.push(scene.party[character].animateFaded(true));
@@ -1574,12 +1586,16 @@ class TurnResultPhaseState extends State {
             enemyDamageNumber.animateAppear(DamageAnimations.TO_PARTY)
           );
         }),
+        scene.enemySkelly.animateAttackEffect(targetMember.sprite.x, targetMember.sprite.y),
       ];
       scene.soundEnemyAttack.play();
 
       await Promise.all(enemyAttackAnimations);
       await wait(scene, 400);
       await enemyDamageNumber.animateDestroy();
+
+      scene.dialog.setText('');
+      return this.transition('startActionChoice');
     }
   }
 }

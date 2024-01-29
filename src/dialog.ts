@@ -70,6 +70,7 @@ export default class Dialog {
     // text temporarily to its final value. The tint data is preserved even
     // after we set the text to be empty again.
     this.text.setVisible(false).setText(text);
+    this.text.setCharacterTint(0, -1);
     for (const { color, start, length } of tints) {
       this.text.setCharacterTint(start, length, true, color);
     }
