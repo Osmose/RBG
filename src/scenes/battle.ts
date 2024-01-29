@@ -975,24 +975,26 @@ class StockCount {
   }
 
   async animateModCount(count: number) {
-    const newCount = Math.min(this.count + count, 40);
+    return this.animateSetCount(Math.min(this.count + count, 40));
+  }
+
+  async animateSetCount(count: number) {
     await Promise.all([
       asyncTween(this.scene, {
         targets: [this.mask],
-        displayWidth: (40 - newCount) * 2,
+        displayWidth: (40 - count) * 2,
         duration: 400,
       }),
       (async () => {
-        await wait(this.scene, 300);
         this.text.setTint(0x3f3e47);
         await wait(this.scene, 100);
-        this.text.setText(`${newCount}`);
+        this.text.setText(`${count}`);
         await wait(this.scene, 100);
         this.text.setTint(TINT_CREAM);
       })(),
     ]);
 
-    this.count = newCount;
+    this.count = count;
   }
 }
 
@@ -1526,9 +1528,8 @@ class TurnResultPhaseState extends State {
     }
     await Promise.all(fadeInAnimations);
 
-    const { partyActionResults, enemyActionResult } = (scene.currentTurnResult = scene.battleState.executeTurn(
-      scene.currentTurnInputs
-    ));
+    const { partyActionResults, enemyActionResult, stockCounts } = (scene.currentTurnResult =
+      scene.battleState.executeTurn(scene.currentTurnInputs));
 
     // Animate attacks, if needed
     if (Object.values(partyActionResults).some((result) => result?.battleAction === BattleActions.Attack)) {
@@ -1539,7 +1540,7 @@ class TurnResultPhaseState extends State {
         (result): result is PartyActionResultAttack => result?.battleAction === BattleActions.Attack
       );
 
-      // Prepage damage numbers for display
+      // Prepare damage numbers for display
       const partyDamageNumbers = attackResults.map(
         ({ character, damage }, index) =>
           new DamageNumber(scene, damage, CHARACTER_COLORS[character], 272 - 3 * index, 82 + 11 * index)
@@ -1553,6 +1554,12 @@ class TurnResultPhaseState extends State {
             partyDamageNumbers[k].animateAppear(DamageAnimations.TO_ENEMY);
             scene.healthEnemy.animateDamage(damage, CHARACTER_COLORS[character], false);
             scene.enemySkelly.animateHurt();
+
+            const sphereType = CHARACTER_SPHERE_TYPES[character];
+            scene.stockCounts[sphereType].animateSetCount(stockCounts[sphereType]);
+            if (k === 0) {
+              scene.stockCounts[SphereType.Key].animateSetCount(stockCounts[SphereType.Key]);
+            }
           })
         );
         scene.soundPartyAttack[character].play();
@@ -1585,6 +1592,14 @@ class TurnResultPhaseState extends State {
             scene.party[target].animateHurt(false),
             enemyDamageNumber.animateAppear(DamageAnimations.TO_PARTY)
           );
+
+          if (partyActionResults[target]?.battleAction === BattleActions.Defend) {
+            const sphereType = CHARACTER_SPHERE_TYPES[target];
+            enemyAttackAnimations.push(
+              scene.stockCounts[sphereType].animateSetCount(stockCounts[sphereType]),
+              scene.stockCounts[SphereType.Yellow].animateSetCount(stockCounts[SphereType.Yellow])
+            );
+          }
         }),
         scene.enemySkelly.animateAttackEffect(targetMember.sprite.x, targetMember.sprite.y),
       ];
