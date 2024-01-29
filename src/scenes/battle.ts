@@ -1401,6 +1401,22 @@ class SolveState extends State {
   }
 }
 
+interface DamageAnimation {
+  damage: Phaser.Types.Math.Vector2Like[];
+  highlight: Phaser.Types.Math.Vector2Like[];
+}
+
+const DamageAnimations: { [key: string]: DamageAnimation } = {
+  TO_ENEMY: {
+    damage: [{ x: -15, y: 5 }, { x: -8, y: -3 }, { x: -6, y: 5 }, { x: -3, y: -2 }, { x: -1, y: 1 }, {}],
+    highlight: [{ x: -14, y: 6 }, { x: -6, y: -1 }, { x: -4, y: 5 }, { x: -1, y: 1 }, { x: 1, y: 2 }, {}],
+  },
+  TO_PARTY: {
+    damage: [{ x: -1, y: -3 }, { x: 2, y: 0 }, { x: 0, y: -1 }, { x: 0, y: 0 }, { x: 0, y: -1 }, {}],
+    highlight: [{ x: 3, y: 0 }, { x: 1, y: -2 }, {}, { x: 0, y: -1 }, { x: 0, y: -1 }, {}],
+  },
+};
+
 class DamageNumber {
   scene: BaseScene;
   x: number;
@@ -1441,32 +1457,15 @@ class DamageNumber {
       .setTint(TINT_CREAM);
   }
 
-  async animateAppear() {
+  async animateAppear(animation: DamageAnimation) {
     // Manual animation because abstracting this is just too annoying right now without a much better animation
     // abstraction.
-    this.highlightSprite.setVisible(true).setPosition(this.x, this.y);
+    this.highlightSprite.setVisible(true).setPosition(this.x + 1, this.y + 1);
     this.damageSprite.setVisible(true).setPosition(this.x, this.y);
 
     await Promise.all([
-      relativePositionTween(
-        this.scene,
-        [this.damageSprite],
-        [{ x: -15, y: 5 }, { x: -8, y: -3 }, { x: -6, y: 5 }, { x: -3, y: -2 }, { x: -1, y: 1 }, {}],
-        75
-      ),
-      relativePositionTween(
-        this.scene,
-        [this.highlightSprite],
-        [
-          { x: -15, y: 5 },
-          { x: -7, y: -2 },
-          { x: -5, y: 4 },
-          { x: -2, y: 0 },
-          { x: 0, y: 1 },
-          { x: 1, y: 1 },
-        ],
-        75
-      ),
+      relativePositionTween(this.scene, [this.damageSprite], animation.damage, 75),
+      relativePositionTween(this.scene, [this.highlightSprite], animation.highlight, 75),
     ]);
 
     for (const sprite of this.borderSprites) {
@@ -1539,7 +1538,7 @@ class TurnResultPhaseState extends State {
         const { character, damage } = attackResults[k];
         attackAnimations.push(
           scene.party[character].animateAttack(() => {
-            partyDamageNumbers[k].animateAppear();
+            partyDamageNumbers[k].animateAppear(DamageAnimations.TO_ENEMY);
             scene.healthEnemy.animateDamage(damage, CHARACTER_COLORS[character], false);
             scene.enemySkelly.animateHurt();
           })
@@ -1557,18 +1556,30 @@ class TurnResultPhaseState extends State {
       const { target, damage } = enemyActionResult;
       await scene.dialog.animateScript('-The <red>Enemy</red> strikes\n  back!', 75, scene.soundText);
 
+      const targetMember = scene.party[target];
+      const enemyDamageNumber = new DamageNumber(
+        scene,
+        damage,
+        CHARACTER_COLORS[target],
+        targetMember.sprite.x + 16,
+        targetMember.sprite.y + 8
+      );
       const enemyAttackAnimations: Promise<void>[] = [
         scene.enemySkelly.animateAttack(() => {
           enemyAttackAnimations.push(
             shake(scene, [scene.dialog.box], ShakeAxis.Y, [2, -1, 0], 50),
             shake(scene, [scene.dialog.text], ShakeAxis.Y, [0, 2, -1, 0], 50),
             scene.partyHealth[target].animateDamage(damage),
-            scene.party[target].animateHurt(false)
+            scene.party[target].animateHurt(false),
+            enemyDamageNumber.animateAppear(DamageAnimations.TO_PARTY)
           );
         }),
       ];
       scene.soundEnemyAttack.play();
+
       await Promise.all(enemyAttackAnimations);
+      await wait(scene, 400);
+      await enemyDamageNumber.animateDestroy();
     }
   }
 }
