@@ -247,7 +247,7 @@ export async function forEachTween<T>(
       return Phaser.Math.Easing.Stepped(v, values.length - 1);
     },
     onUpdate(tween) {
-      callback(values[tween.getValue()]);
+      callback(values[Math.floor(tween.getValue())]);
     },
   });
 }
@@ -259,11 +259,11 @@ export async function relativePositionTween(
   frameDuration: number
 ) {
   const originalPositions = targets.map((target) => ({ x: target.x, y: target.y }));
-  await forEachTween(scene, positions, frameDuration, ({ x, y }) => {
+  await forEachTween(scene, positions, frameDuration, (position) => {
     for (let k = 0; k < targets.length; k++) {
       const target = targets[k];
-      target.x = originalPositions[k].x + (x ?? 0);
-      target.y = originalPositions[k].y + (y ?? 0);
+      target.x = originalPositions[k].x + (position.x ?? 0);
+      target.y = originalPositions[k].y + (position.y ?? 0);
     }
   });
 }

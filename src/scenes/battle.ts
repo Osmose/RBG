@@ -16,6 +16,7 @@ import {
   shake,
   ShakeAxis,
   forEachTween,
+  relativePositionTween,
 } from 'gate/util';
 import Phaser from 'phaser';
 import BaseScene from 'gate/scenes/base';
@@ -111,6 +112,7 @@ export default class BattleScene extends BaseScene {
   soundMoveCursor!: Phaser.Sound.BaseSound;
   soundText!: Phaser.Sound.BaseSound;
   soundPartyAttack!: { [key in Characters]: Phaser.Sound.BaseSound };
+  soundEnemyAttack!: Phaser.Sound.BaseSound;
 
   // Battle logic
   battleState!: BattleState;
@@ -151,6 +153,7 @@ export default class BattleScene extends BaseScene {
     this.load.audio('soundRojoAttack', 'audio/rojo_attack.mp3');
     this.load.audio('soundBlueAttack', 'audio/blue_attack.mp3');
     this.load.audio('soundMidoriAttack', 'audio/midori_attack.mp3');
+    this.load.audio('soundEnemyAttack', 'audio/enemy_attack.mp3');
   }
 
   create() {
@@ -191,6 +194,7 @@ export default class BattleScene extends BaseScene {
       [Characters.Blue]: this.sound.add('soundBlueAttack'),
       [Characters.Midori]: this.sound.add('soundMidoriAttack'),
     };
+    this.soundEnemyAttack = this.sound.add('soundEnemyAttack');
 
     this.spheres = [];
     for (let y = 0; y < GRID_HEIGHT; y++) {
@@ -517,31 +521,28 @@ class PartyMember {
     }
 
     // Character-specific animations
-    scene.anims.create({
-      key: `party[${Characters.Rojo}]Attack`,
-      frameRate: 10,
-      repeat: 0,
-      frames: scene.anims.generateFrameNumbers(`party[${Characters.Rojo}]`, {
-        frames: [4, 5, 6, 7, 8, 9, 10, 11, 11, 11, 12, 13, 14, 15],
-      }),
-    });
-    scene.anims.create({
-      key: `party[${Characters.Blue}]Attack`,
-      frameRate: 10,
-      repeat: 0,
-      frames: scene.anims.generateFrameNumbers(`party[${Characters.Blue}]`, {
-        start: 4,
-        end: 15,
-      }),
-    });
-    scene.anims.create({
-      key: `party[${Characters.Midori}]Attack`,
-      frameRate: 10,
-      repeat: 0,
-      frames: scene.anims.generateFrameNumbers(`party[${Characters.Midori}]`, {
-        frames: [4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 16, 17, 17],
-      }),
-    });
+    const partyAnims: [Characters, string, number[]][] = [
+      [Characters.Rojo, 'Attack', [4, 5, 6, 7, 8, 9, 10, 11, 11, 11, 12, 13, 14, 15]],
+      [Characters.Rojo, 'Hurt', [16, 17, 17, 17, 18, 18, 19, 20]],
+      [Characters.Rojo, 'Death', [21, 22]],
+      [Characters.Blue, 'Attack', [4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]],
+      [Characters.Blue, 'Hurt', [16, 17, 17, 17, 18, 18, 19, 20]],
+      [Characters.Blue, 'Death', [21, 22]],
+      [Characters.Midori, 'Attack', [4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 16, 17, 17]],
+      [Characters.Midori, 'Hurt', [18, 19, 19, 19, 20, 20, 21, 22]],
+      [Characters.Midori, 'Death', [23, 24]],
+    ];
+    for (const [character, key, frames] of partyAnims) {
+      scene.anims.create({
+        key: `party[${character}]${key}`,
+        frameRate: 10,
+        repeat: 0,
+        frames: scene.anims.generateFrameNumbers(`party[${character}]`, {
+          frames,
+        }),
+      });
+    }
+
     scene.anims.create({
       key: `party[${Characters.Rojo}]AttackEffect`,
       frameRate: 10,
@@ -612,6 +613,15 @@ class PartyMember {
     await asyncAnimation(this.sprite, `party[${this.character}]Attack`);
     this.sprite.off('animationupdate', handleAnimationUpdate);
     this.sprite.play(`party[${this.character}]Idle`);
+  }
+
+  async animateHurt(death: boolean) {
+    await asyncAnimation(this.sprite, `party[${this.character}]Hurt`);
+    if (death) {
+      await asyncAnimation(this.sprite, `party[${this.character}]Death`);
+    } else {
+      this.sprite.play(`party[${this.character}]Idle`);
+    }
   }
 }
 
@@ -1434,27 +1444,31 @@ class DamageNumber {
   async animateAppear() {
     // Manual animation because abstracting this is just too annoying right now without a much better animation
     // abstraction.
-    this.highlightSprite.setVisible(true).setPosition(this.x - 15, this.y + 5);
-    await wait(this.scene, 75);
+    this.highlightSprite.setVisible(true).setPosition(this.x, this.y);
+    this.damageSprite.setVisible(true).setPosition(this.x, this.y);
 
-    this.damageSprite.setVisible(true).setPosition(this.x - 8, this.y - 3);
-    this.highlightSprite.setPosition(this.x - 7, this.y - 2);
-    await wait(this.scene, 75);
+    await Promise.all([
+      relativePositionTween(
+        this.scene,
+        [this.damageSprite],
+        [{ x: -15, y: 5 }, { x: -8, y: -3 }, { x: -6, y: 5 }, { x: -3, y: -2 }, { x: -1, y: 1 }, {}],
+        75
+      ),
+      relativePositionTween(
+        this.scene,
+        [this.highlightSprite],
+        [
+          { x: -15, y: 5 },
+          { x: -7, y: -2 },
+          { x: -5, y: 4 },
+          { x: -2, y: 0 },
+          { x: 0, y: 1 },
+          { x: 1, y: 1 },
+        ],
+        75
+      ),
+    ]);
 
-    this.damageSprite.setPosition(this.x - 6, this.y + 5);
-    this.highlightSprite.setPosition(this.x - 5, this.y + 4);
-    await wait(this.scene, 75);
-
-    this.damageSprite.setPosition(this.x - 3, this.y - 2);
-    this.highlightSprite.setPosition(this.x - 2, this.y);
-    await wait(this.scene, 75);
-
-    this.damageSprite.setPosition(this.x - 1, this.y + 1);
-    this.highlightSprite.setPosition(this.x, this.y + 1);
-    await wait(this.scene, 75);
-
-    this.damageSprite.setPosition(this.x, this.y);
-    this.highlightSprite.setPosition(this.x + 1, this.y + 1);
     for (const sprite of this.borderSprites) {
       sprite.setVisible(true);
     }
@@ -1515,7 +1529,7 @@ class TurnResultPhaseState extends State {
       );
 
       // Prepage damage numbers for display
-      const damageNumbers = attackResults.map(
+      const partyDamageNumbers = attackResults.map(
         ({ character, damage }, index) =>
           new DamageNumber(scene, damage, CHARACTER_COLORS[character], 272 - 3 * index, 82 + 11 * index)
       );
@@ -1525,7 +1539,7 @@ class TurnResultPhaseState extends State {
         const { character, damage } = attackResults[k];
         attackAnimations.push(
           scene.party[character].animateAttack(() => {
-            damageNumbers[k].animateAppear();
+            partyDamageNumbers[k].animateAppear();
             scene.healthEnemy.animateDamage(damage, CHARACTER_COLORS[character], false);
             scene.enemySkelly.animateHurt();
           })
@@ -1536,7 +1550,7 @@ class TurnResultPhaseState extends State {
 
       await Promise.all(attackAnimations);
       await wait(scene, 400);
-      await Promise.all(damageNumbers.map((damageNumber) => damageNumber.animateDestroy()));
+      await Promise.all(partyDamageNumbers.map((damageNumber) => damageNumber.animateDestroy()));
     }
 
     if (enemyActionResult) {
@@ -1548,10 +1562,12 @@ class TurnResultPhaseState extends State {
           enemyAttackAnimations.push(
             shake(scene, [scene.dialog.box], ShakeAxis.Y, [2, -1, 0], 50),
             shake(scene, [scene.dialog.text], ShakeAxis.Y, [0, 2, -1, 0], 50),
-            scene.partyHealth[target].animateDamage(damage)
+            scene.partyHealth[target].animateDamage(damage),
+            scene.party[target].animateHurt(false)
           );
         }),
       ];
+      scene.soundEnemyAttack.play();
       await Promise.all(enemyAttackAnimations);
     }
   }
