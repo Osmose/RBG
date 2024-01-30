@@ -17,30 +17,32 @@ import {
   ShakeAxis,
   forEachTween,
   relativePositionTween,
+  asyncCounter,
 } from 'gate/util';
 import Phaser from 'phaser';
 import BaseScene from 'gate/scenes/base';
 import Menu, { horizontalMenuItems } from 'gate/menu';
 import Dialog from 'gate/dialog';
 import { Entries } from 'type-fest';
+import { BASE_WIDTH } from 'gate/constants';
 
 const GRID_WIDTH = 8;
 const GRID_HEIGHT = 9;
 
 const SPHERE_WINDOW_LEFT = 48;
-const SPHERE_WINDOW_TOP = 40;
+const SPHERE_WINDOW_TOP = 43;
 const SPHERE_STOCK_LEFT = 54;
-const SPHERE_STOCK_TOP = 172;
+const SPHERE_STOCK_TOP = 175;
 const HEALTH_LEFT = 186;
-const HEALTH_TOP = 37;
+const HEALTH_TOP = 40;
 
 const PARTY_LEFT = 184;
-const PARTY_TOP = 62;
+const PARTY_TOP = 65;
 const ENEMY_LEFT = 259;
-const ENEMY_TOP = 85;
+const ENEMY_TOP = 88;
 
 const DIALOG_LEFT = 178;
-const DIALOG_TOP = 172;
+const DIALOG_TOP = 175;
 
 const ALPHA_FADED = 0.6;
 const ALPHA_UNFADED = 0;
@@ -91,6 +93,7 @@ export default class BattleScene extends BaseScene {
   actionSprites!: { [character in Characters]: { [action in BattleActions]: Phaser.GameObjects.Sprite } };
   allActionSprites!: Phaser.GameObjects.Sprite;
   dialog!: Dialog;
+  blackoutMask!: Phaser.GameObjects.Graphics;
 
   // Enemies
   enemySkelly!: Skelly;
@@ -122,37 +125,37 @@ export default class BattleScene extends BaseScene {
 
   constructor() {
     super({
-      key: 'board',
+      key: 'battle',
     });
   }
 
-  preload() {
-    Sphere.preload(this);
-    StockCount.preload(this);
-    Skelly.preload(this);
-    PartyMember.preload(this);
-    HealthBar.preload(this);
-    ActionChoiceState.preload(this);
-    Dialog.preload(this);
+  loadResources(scene: BaseScene) {
+    Sphere.preload(scene);
+    StockCount.preload(scene);
+    Skelly.preload(scene);
+    PartyMember.preload(scene);
+    HealthBar.preload(scene);
+    ActionChoiceState.preload(scene);
+    Dialog.preload(scene);
 
-    this.load.image('battleBorder', 'ui/battle_border.png');
-    this.load.image('battleGrid', 'ui/battle_grid.png');
-    this.load.image('battleSphereWindow', 'ui/battle_sphere_window.png');
-    this.load.image('battleSphereStock', 'ui/color_stock.png');
+    scene.load.image('battleBorder', 'ui/battle_border.png');
+    scene.load.image('battleGrid', 'ui/battle_grid.png');
+    scene.load.image('battleSphereWindow', 'ui/battle_sphere_window.png');
+    scene.load.image('battleSphereStock', 'ui/color_stock.png');
 
-    this.load.bitmapFont('numbers', 'ui/numbers.png', 'ui/numbers.fnt');
+    scene.load.bitmapFont('numbers', 'ui/numbers.png', 'ui/numbers.fnt');
 
-    this.load.audio('swap', 'audio/swap.mp3');
-    this.load.audio('clear', 'audio/clear.mp3');
-    this.load.audio('actionAppear', 'audio/action_appear.mp3');
-    this.load.audio('select', 'audio/select.mp3');
-    this.load.audio('moveCursor', 'audio/move_cursor.mp3');
-    this.load.audio('soundText', 'audio/text.mp3');
-    this.load.audio('soundRojoAttack', 'audio/rojo_attack.mp3');
-    this.load.audio('soundBlueAttack', 'audio/blue_attack.mp3');
-    this.load.audio('soundMidoriAttack', 'audio/midori_attack.mp3');
-    this.load.audio('soundEnemyAttack', 'audio/enemy_attack.mp3');
-    this.load.audio('soundPartyDeath', 'audio/player_death.mp3');
+    scene.load.audio('swap', 'audio/swap.mp3');
+    scene.load.audio('clear', 'audio/clear.mp3');
+    scene.load.audio('actionAppear', 'audio/action_appear.mp3');
+    scene.load.audio('select', 'audio/select.mp3');
+    scene.load.audio('moveCursor', 'audio/move_cursor.mp3');
+    scene.load.audio('soundText', 'audio/text.mp3');
+    scene.load.audio('soundRojoAttack', 'audio/rojo_attack.mp3');
+    scene.load.audio('soundBlueAttack', 'audio/blue_attack.mp3');
+    scene.load.audio('soundMidoriAttack', 'audio/midori_attack.mp3');
+    scene.load.audio('soundEnemyAttack', 'audio/enemy_attack.mp3');
+    scene.load.audio('soundPartyDeath', 'audio/player_death.mp3');
   }
 
   create() {
@@ -162,6 +165,9 @@ export default class BattleScene extends BaseScene {
     Skelly.create(this);
     PartyMember.create(this);
     ActionChoiceState.create(this);
+
+    this.blackoutMask = this.make.graphics();
+    this.cameras.main.setMask(this.blackoutMask.createGeometryMask());
 
     this.battleGrid = this.add.tileSprite(196, 114, 326, 104, 'battleGrid').setDepth(DEPTH_BACKGROUND);
     this.battleBorder = this.add.image(190, 120, 'battleBorder').setDepth(DEPTH_UI);
@@ -218,7 +224,7 @@ export default class BattleScene extends BaseScene {
 
     this.battleState = new BattleState(
       {
-        [Characters.Rojo]: { hp: 1, maxHp: 101, atk: 70 },
+        [Characters.Rojo]: { hp: 101, maxHp: 101, atk: 70 },
         [Characters.Blue]: { hp: 93, maxHp: 93, atk: 25 },
         [Characters.Midori]: { hp: 123, maxHp: 123, atk: 35 },
       },
@@ -264,8 +270,9 @@ export default class BattleScene extends BaseScene {
     this.dialog = new Dialog(this, DIALOG_LEFT + 82, DIALOG_TOP + 16).setDepth(DEPTH_UI);
 
     this.stateMachine = new StateMachine(
-      'startActionChoice',
+      'intro',
       {
+        intro: new IntroState(),
         startActionChoice: new StartActionChoiceState(),
         actionChoice: new ActionChoiceState(),
         movePhase: new MovePhaseState(),
@@ -428,7 +435,7 @@ class Skelly {
   sprite: Phaser.GameObjects.Sprite;
   ground: Phaser.GameObjects.Image;
 
-  static preload(scene: BattleScene) {
+  static preload(scene: BaseScene) {
     scene.load.spritesheet('enemySkelly', 'enemies/skelly.png', { frameWidth: 80, frameHeight: 64 });
     scene.load.image('enemySkellyGround', 'enemies/skelly_ground.png');
     scene.load.spritesheet('enemySkellyAttackEffect', 'effects/enemy_attack.png', { frameWidth: 96, frameHeight: 80 });
@@ -524,7 +531,7 @@ class PartyMember {
     [Characters.Midori]: 9,
   };
 
-  static preload(scene: BattleScene) {
+  static preload(scene: BaseScene) {
     for (const character of Object.values(Characters)) {
       scene.load.spritesheet(`party[${character}]`, `party/${character}.png`, {
         frameWidth: 64,
@@ -681,7 +688,7 @@ class HealthBar {
     [HealthBarType.Enemy]: TINT_YELLOW,
   };
 
-  static preload(scene: BattleScene) {
+  static preload(scene: BaseScene) {
     scene.load.spritesheet('partyHealthBarFrames', 'ui/party_health_bar_frames.png', {
       frameWidth: 34,
       frameHeight: 6,
@@ -857,7 +864,7 @@ class Sphere {
 
   static EMPTY_FRAME = 29;
 
-  static preload(scene: BattleScene) {
+  static preload(scene: BaseScene) {
     scene.load.spritesheet('battleSpheres', 'ui/spheres.png', { frameWidth: 14, frameHeight: 14 });
   }
 
@@ -962,7 +969,7 @@ class StockCount {
   text: Phaser.GameObjects.BitmapText;
   count!: number;
 
-  static preload(scene: BattleScene) {
+  static preload(scene: BaseScene) {
     scene.load.spritesheet('sphereStockBar', 'ui/stock_bar.png', { frameWidth: 80, frameHeight: 4 });
   }
 
@@ -1015,6 +1022,42 @@ class StockCount {
   }
 }
 
+class IntroState extends State {
+  async handleEntered(scene: BattleScene) {
+    scene.blackoutMask.fillStyle(0xffffff);
+    await asyncCounter(scene, {
+      from: 0,
+      to: 156,
+      ease(v: number) {
+        return Phaser.Math.Easing.Stepped(Phaser.Math.Easing.Quadratic.Out(v), 16);
+      },
+      duration: 400,
+      onUpdate(tween) {
+        scene.blackoutMask.fillRect(
+          scene.cameras.main.centerX - tween.getValue(),
+          scene.cameras.main.centerY - 1,
+          tween.getValue() * 2,
+          2
+        );
+      },
+    });
+    await asyncCounter(scene, {
+      from: 0,
+      to: 90,
+      ease(v: number) {
+        return Phaser.Math.Easing.Stepped(Phaser.Math.Easing.Quadratic.Out(v), 24);
+      },
+      duration: 600,
+      onUpdate(tween) {
+        scene.blackoutMask.fillRect(0, scene.cameras.main.centerY - tween.getValue(), BASE_WIDTH, tween.getValue() * 2);
+      },
+    });
+
+    scene.cameras.main.clearMask();
+    this.transition('startActionChoice');
+  }
+}
+
 class StartActionChoiceState extends State {
   async handleEntered(scene: BattleScene) {
     const fadeTweens = [scene.enemySkelly.animateFaded(true)];
@@ -1043,7 +1086,7 @@ class ActionChoiceState extends State {
     [BattleActions.Attack]: 9,
   };
 
-  static preload(scene: BattleScene) {
+  static preload(scene: BaseScene) {
     scene.load.spritesheet('battleActions', 'ui/battle_actions.png', { frameWidth: 22, frameHeight: 20 });
   }
 

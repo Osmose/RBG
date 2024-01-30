@@ -287,3 +287,11 @@ export async function shake(
     frameDuration
   );
 }
+
+export function asyncLoad(scene: Phaser.Scene, loadFunc: (scene: Phaser.Scene) => unknown) {
+  return new Promise((resolve) => {
+    loadFunc(scene);
+    scene.load.once('complete', resolve);
+    scene.load.start();
+  });
+}
