@@ -113,14 +113,12 @@ export default class BattleScene extends BaseScene {
   soundText!: Phaser.Sound.BaseSound;
   soundPartyAttack!: { [key in Characters]: Phaser.Sound.BaseSound };
   soundEnemyAttack!: Phaser.Sound.BaseSound;
+  soundPartyDeath!: Phaser.Sound.BaseSound;
 
   // Battle logic
   battleState!: BattleState;
   currentTurnInputs!: TurnInputs;
   currentTurnResult!: TurnResult;
-
-  /** Order in which character stuff generally happens */
-  characterOrder = [Characters.Rojo, Characters.Blue, Characters.Midori];
 
   constructor() {
     super({
@@ -154,6 +152,7 @@ export default class BattleScene extends BaseScene {
     this.load.audio('soundBlueAttack', 'audio/blue_attack.mp3');
     this.load.audio('soundMidoriAttack', 'audio/midori_attack.mp3');
     this.load.audio('soundEnemyAttack', 'audio/enemy_attack.mp3');
+    this.load.audio('soundPartyDeath', 'audio/player_death.mp3');
   }
 
   create() {
@@ -195,6 +194,7 @@ export default class BattleScene extends BaseScene {
       [Characters.Midori]: this.sound.add('soundMidoriAttack'),
     };
     this.soundEnemyAttack = this.sound.add('soundEnemyAttack');
+    this.soundPartyDeath = this.sound.add('soundPartyDeath');
 
     this.spheres = [];
     for (let y = 0; y < GRID_HEIGHT; y++) {
@@ -218,7 +218,7 @@ export default class BattleScene extends BaseScene {
 
     this.battleState = new BattleState(
       {
-        [Characters.Rojo]: { hp: 101, maxHp: 101, atk: 70 },
+        [Characters.Rojo]: { hp: 1, maxHp: 101, atk: 70 },
         [Characters.Blue]: { hp: 93, maxHp: 93, atk: 25 },
         [Characters.Midori]: { hp: 123, maxHp: 123, atk: 35 },
       },
@@ -294,6 +294,12 @@ export default class BattleScene extends BaseScene {
 
     return this.spheres[gridY * GRID_WIDTH + gridX];
   }
+
+  get activeCharacters() {
+    return [Characters.Rojo, Characters.Blue, Characters.Midori].filter(
+      (character) => this.battleState.partyMemberStatuses[character].hp > 0
+    );
+  }
 }
 
 interface EnemyStatus {
@@ -325,6 +331,7 @@ type PartyActionResult = PartyActionResultAttack | PartyActionResultDefend;
 interface EnemyActionResult {
   target: Characters;
   damage: number;
+  death: boolean;
 }
 
 interface TurnResult {
@@ -366,8 +373,10 @@ class BattleState {
     for (const [character, battleAction] of Object.entries(turnInputs) as Entries<typeof turnInputs>) {
       const sphereType = CHARACTER_SPHERE_TYPES[character];
       if (battleAction === BattleActions.Attack) {
-        const damage =
-          this.partyMemberStatuses[character].atk + this.stockCounts[sphereType] + this.stockCounts[SphereType.Key];
+        const damage = Math.max(
+          0,
+          this.partyMemberStatuses[character].atk + this.stockCounts[sphereType] + this.stockCounts[SphereType.Key]
+        );
         this.enemyStatus.hp = Math.max(this.enemyStatus.hp - damage, 0);
         this.stockCounts[sphereType] = 0;
         clearKey = true;
@@ -396,11 +405,13 @@ class BattleState {
         this.stockCounts[SphereType.Yellow] = 0;
       }
 
+      damage = Math.max(0, damage);
       this.partyMemberStatuses[target].hp = Math.max(this.partyMemberStatuses[target].hp - damage, 0);
 
       enemyActionResult = {
         target,
         damage,
+        death: this.partyMemberStatuses[target].hp === 0,
       };
     }
 
@@ -629,13 +640,13 @@ class PartyMember {
     this.sprite.play(`party[${this.character}]Idle`);
   }
 
-  async animateHurt(death: boolean) {
+  async animateHurt() {
     await asyncAnimation(this.sprite, `party[${this.character}]Hurt`);
-    if (death) {
-      await asyncAnimation(this.sprite, `party[${this.character}]Death`);
-    } else {
-      this.sprite.play(`party[${this.character}]Idle`);
-    }
+    this.sprite.play(`party[${this.character}]Idle`);
+  }
+
+  async animateDeath() {
+    await asyncAnimation(this.sprite, `party[${this.character}]Death`);
   }
 }
 
@@ -741,7 +752,7 @@ class HealthBar {
   }
 
   setHealth(currentHealth: number, maxHealth?: number) {
-    this.currentHealth = currentHealth;
+    this.currentHealth = Math.max(currentHealth, 0);
     this.maxHealth = maxHealth ?? this.maxHealth;
 
     const percent = this.currentHealth / this.maxHealth;
@@ -749,6 +760,10 @@ class HealthBar {
     this.bar2.width = Math.ceil(percent * this.fullBarWidth);
     this.currentHealthText?.setText(this.currentHealth.toString().padStart(3, ' '));
     this.maxHealthText?.setText(`/${this.maxHealth}`);
+
+    if (this.currentHealth < 1) {
+      this.portrait.setFrame(this.type + 4);
+    }
   }
 
   async animateDamage(damage: number, color: number = TINT_YELLOW, shouldShake = true) {
@@ -815,7 +830,9 @@ class HealthBar {
     await Promise.all(animations);
 
     // Un-hurt face
-    this.portrait.setFrame(this.type);
+    if (this.currentHealth > 0) {
+      this.portrait.setFrame(this.type);
+    }
 
     damageBar1.destroy();
     damageBar2.destroy();
@@ -1001,7 +1018,7 @@ class StockCount {
 class StartActionChoiceState extends State {
   async handleEntered(scene: BattleScene) {
     const fadeTweens = [scene.enemySkelly.animateFaded(true)];
-    for (const character of scene.characterOrder.slice(1)) {
+    for (const character of scene.activeCharacters.slice(1)) {
       fadeTweens.push(scene.party[character].animateFaded(true));
     }
     await Promise.all(fadeTweens);
@@ -1066,7 +1083,7 @@ class ActionChoiceState extends State {
 
   init(scene: BattleScene) {
     scene.actionSprites = {} as typeof scene.actionSprites;
-    for (const character of scene.characterOrder) {
+    for (const character of scene.activeCharacters) {
       const partyMember = scene.party[character];
       scene.actionSprites[character] = {
         [BattleActions.Defend]: scene.add.sprite(
@@ -1116,7 +1133,7 @@ class ActionChoiceState extends State {
       }
       this.partyMember.animateFaded(true);
 
-      if (this.characterIndex < scene.characterOrder.length - 1) {
+      if (this.characterIndex < scene.activeCharacters.length - 1) {
         this.transition('actionChoice', this.characterIndex + 1);
       } else {
         this.transition('movePhase');
@@ -1126,7 +1143,7 @@ class ActionChoiceState extends State {
 
   async handleEntered(scene: BattleScene, characterIndex: number) {
     this.characterIndex = characterIndex;
-    this.character = scene.characterOrder[characterIndex];
+    this.character = scene.activeCharacters[characterIndex];
     this.partyMember = scene.party[this.character];
 
     // Reset choices if new turn
@@ -1511,7 +1528,7 @@ class TurnResultPhaseState extends State {
         duration: 400,
       }),
     ];
-    for (const character of scene.characterOrder) {
+    for (const character of scene.activeCharacters) {
       const battleAction = scene.currentTurnInputs[character];
       hideAnimations.push(
         asyncAnimation(scene.actionSprites[character][battleAction], {
@@ -1523,8 +1540,8 @@ class TurnResultPhaseState extends State {
     await Promise.all(hideAnimations);
 
     const fadeInAnimations = [scene.enemySkelly.animateFaded(false)];
-    for (const partyMember of Object.values(scene.party)) {
-      fadeInAnimations.push(partyMember.animateFaded(false));
+    for (const character of scene.activeCharacters) {
+      fadeInAnimations.push(scene.party[character].animateFaded(false));
     }
     await Promise.all(fadeInAnimations);
 
@@ -1572,7 +1589,7 @@ class TurnResultPhaseState extends State {
     }
 
     if (enemyActionResult) {
-      const { target, damage } = enemyActionResult;
+      const { target, damage, death } = enemyActionResult;
       await scene.dialog.animateScript('-The <red>Enemy</red> strikes\n  back!', 75, scene.soundText);
 
       const targetMember = scene.party[target];
@@ -1585,11 +1602,19 @@ class TurnResultPhaseState extends State {
       );
       const enemyAttackAnimations: Promise<void>[] = [
         scene.enemySkelly.animateAttack(() => {
+          const targetMember = scene.party[target];
+          const hurtAnimation = targetMember.animateHurt().then(async () => {
+            if (death) {
+              scene.soundPartyDeath.play();
+              targetMember.setFaded(true);
+              await targetMember.animateDeath();
+            }
+          });
           enemyAttackAnimations.push(
             shake(scene, [scene.dialog.box], ShakeAxis.Y, [2, -1, 0], 50),
             shake(scene, [scene.dialog.text], ShakeAxis.Y, [0, 2, -1, 0], 50),
             scene.partyHealth[target].animateDamage(damage),
-            scene.party[target].animateHurt(false),
+            hurtAnimation,
             enemyDamageNumber.animateAppear(DamageAnimations.TO_PARTY)
           );
 
