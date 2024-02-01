@@ -295,3 +295,11 @@ export function asyncLoad(scene: Phaser.Scene, loadFunc: (scene: Phaser.Scene) =
     scene.load.start();
   });
 }
+
+export function steppedCubicEase(duration: number, frameRate = 10) {
+  const frameDuration = 1000 / frameRate;
+  const steps = duration / frameDuration;
+  return (v: number) => {
+    return Phaser.Math.Easing.Cubic.Out(Phaser.Math.Easing.Stepped(v, steps));
+  };
+}

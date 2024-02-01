@@ -20,6 +20,6 @@
   },
   "dependencies": {
     "lodash.invert": "^4.3.0",
-    "phaser": "^3.60.0"
+    "phaser": "^3.70.0"
   }
 }

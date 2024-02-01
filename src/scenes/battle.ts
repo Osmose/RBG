@@ -18,13 +18,14 @@ import {
   forEachTween,
   relativePositionTween,
   asyncCounter,
+  steppedCubicEase,
 } from 'gate/util';
 import Phaser from 'phaser';
 import BaseScene from 'gate/scenes/base';
 import Menu, { horizontalMenuItems } from 'gate/menu';
 import Dialog from 'gate/dialog';
 import { Entries } from 'type-fest';
-import { BASE_WIDTH } from 'gate/constants';
+import { BASE_HEIGHT, BASE_WIDTH } from 'gate/constants';
 
 const GRID_WIDTH = 8;
 const GRID_HEIGHT = 9;
@@ -50,6 +51,7 @@ const ALPHA_UNFADED = 0;
 const DEPTH_BACKGROUND = -10;
 const DEPTH_ENTITIES = 0;
 const DEPTH_UI = 10;
+const DEPTH_MODAL = 20;
 
 const TINT_CREAM = 0xfffa9b;
 const TINT_YELLOW = 0xfff55e;
@@ -117,6 +119,7 @@ export default class BattleScene extends BaseScene {
   soundPartyAttack!: { [key in Characters]: Phaser.Sound.BaseSound };
   soundEnemyAttack!: Phaser.Sound.BaseSound;
   soundPartyDeath!: Phaser.Sound.BaseSound;
+  soundGameOver!: Phaser.Sound.BaseSound;
 
   // Battle logic
   battleState!: BattleState;
@@ -156,6 +159,7 @@ export default class BattleScene extends BaseScene {
     scene.load.audio('soundMidoriAttack', 'audio/midori_attack.mp3');
     scene.load.audio('soundEnemyAttack', 'audio/enemy_attack.mp3');
     scene.load.audio('soundPartyDeath', 'audio/player_death.mp3');
+    scene.load.audio('soundGameOver', 'audio/gameover.mp3');
   }
 
   create() {
@@ -201,6 +205,7 @@ export default class BattleScene extends BaseScene {
     };
     this.soundEnemyAttack = this.sound.add('soundEnemyAttack');
     this.soundPartyDeath = this.sound.add('soundPartyDeath');
+    this.soundGameOver = this.sound.add('soundGameOver');
 
     this.spheres = [];
     for (let y = 0; y < GRID_HEIGHT; y++) {
@@ -224,9 +229,9 @@ export default class BattleScene extends BaseScene {
 
     this.battleState = new BattleState(
       {
-        [Characters.Rojo]: { hp: 101, maxHp: 101, atk: 70 },
-        [Characters.Blue]: { hp: 93, maxHp: 93, atk: 25 },
-        [Characters.Midori]: { hp: 123, maxHp: 123, atk: 35 },
+        [Characters.Rojo]: { hp: 1, maxHp: 101, atk: 70 },
+        [Characters.Blue]: { hp: 0, maxHp: 93, atk: 25 },
+        [Characters.Midori]: { hp: 0, maxHp: 123, atk: 35 },
       },
       { hp: 300, maxHp: 300 }
     );
@@ -267,7 +272,7 @@ export default class BattleScene extends BaseScene {
       this.battleState.enemyStatus.maxHp
     );
 
-    this.dialog = new Dialog(this, DIALOG_LEFT + 82, DIALOG_TOP + 16).setDepth(DEPTH_UI);
+    this.dialog = new Dialog(this, DIALOG_LEFT + 82, DIALOG_TOP + 16, 160, 24).setDepth(DEPTH_UI);
 
     this.stateMachine = new StateMachine(
       'intro',
@@ -280,6 +285,7 @@ export default class BattleScene extends BaseScene {
         swap: new SwapState(),
         solve: new SolveState(),
         turnResult: new TurnResultPhaseState(),
+        gameOver: new GameOverState(),
       },
       [this]
     );
@@ -370,6 +376,14 @@ class BattleState {
 
   modStockCount(type: SphereType, value: number) {
     this.stockCounts[type] += value;
+  }
+
+  get isGameOver() {
+    return Object.values(this.partyMemberStatuses).every((status) => status.hp < 1);
+  }
+
+  get isVictory() {
+    return this.enemyStatus.hp < 1;
   }
 
   executeTurn(turnInputs: TurnInputs): TurnResult {
@@ -797,7 +811,7 @@ class HealthBar {
         delay: 400,
         duration: 400,
         completeDelay: 100,
-        ease: 'Cubic.out',
+        ease: steppedCubicEase(400),
       }),
     ];
 
@@ -1027,10 +1041,8 @@ class IntroState extends State {
     scene.blackoutMask.fillStyle(0xffffff);
     await asyncCounter(scene, {
       from: 0,
-      to: 156,
-      ease(v: number) {
-        return Phaser.Math.Easing.Stepped(Phaser.Math.Easing.Quadratic.Out(v), 16);
-      },
+      to: 160,
+      ease: steppedCubicEase(400),
       duration: 400,
       onUpdate(tween) {
         scene.blackoutMask.fillRect(
@@ -1043,10 +1055,8 @@ class IntroState extends State {
     });
     await asyncCounter(scene, {
       from: 0,
-      to: 90,
-      ease(v: number) {
-        return Phaser.Math.Easing.Stepped(Phaser.Math.Easing.Quadratic.Out(v), 24);
-      },
+      to: 91,
+      ease: steppedCubicEase(600),
       duration: 600,
       onUpdate(tween) {
         scene.blackoutMask.fillRect(0, scene.cameras.main.centerY - tween.getValue(), BASE_WIDTH, tween.getValue() * 2);
@@ -1065,6 +1075,10 @@ class StartActionChoiceState extends State {
       fadeTweens.push(scene.party[character].animateFaded(true));
     }
     await Promise.all(fadeTweens);
+
+    if (scene.battleState.isGameOver) {
+      return this.transition('gameOver');
+    }
 
     this.transition('actionChoice', 0);
   }
@@ -1680,5 +1694,32 @@ class TurnResultPhaseState extends State {
       scene.dialog.setText('');
       return this.transition('startActionChoice');
     }
+  }
+}
+
+class GameOverState extends State {
+  fadeRect!: Phaser.GameObjects.Rectangle;
+  dialog!: Dialog;
+
+  init(scene: BattleScene) {
+    this.fadeRect = scene.add
+      .rectangle(scene.cameras.main.centerX, scene.cameras.main.centerY, BASE_WIDTH, BASE_HEIGHT, 0x000000, 1)
+      .setAlpha(0)
+      .setDepth(DEPTH_MODAL);
+    this.dialog = new Dialog(scene, scene.cameras.main.centerX, scene.cameras.main.centerY)
+      .setText('GAME OVER\nRefresh to try again', true)
+      .setVisible(false)
+      .setDepth(DEPTH_MODAL);
+    this.dialog.text.setCenterAlign();
+  }
+
+  async handleEntered(scene: BattleScene) {
+    scene.soundGameOver.play({ loop: true });
+    await asyncTween(scene, {
+      targets: [this.fadeRect],
+      alpha: 0.8,
+      duration: 500,
+    });
+    await this.dialog.animateAppear();
   }
 }

@@ -1,5 +1,5 @@
 import BaseScene from 'gate/scenes/base';
-import { wait } from 'gate/util';
+import { asyncTween, steppedCubicEase, wait } from 'gate/util';
 
 interface ScriptTint {
   color: number;
@@ -9,28 +9,68 @@ interface ScriptTint {
 
 export default class Dialog {
   scene: BaseScene;
-  box: Phaser.GameObjects.Image;
+  box: Phaser.GameObjects.NineSlice;
   text: Phaser.GameObjects.BitmapText;
+
+  static padding = {
+    top: 8,
+    left: 4,
+    right: 4,
+    bottom: 2,
+  };
 
   static preload(scene: BaseScene) {
     scene.load.bitmapFont('sodapop', 'ui/sodapop_0.png', 'ui/sodapop.fnt');
-    scene.load.image('dialogBox', 'ui/dialog_box.png');
+    scene.load.image('dialogSlice', 'ui/dialog_slice.png');
   }
 
-  constructor(scene: BaseScene, x: number, y: number, text?: string) {
+  constructor(scene: BaseScene, x: number, y: number, width = 10, height = 10, text?: string) {
     this.scene = scene;
-    this.box = scene.add.image(x, y, 'dialogBox');
-    this.text = scene.add.bitmapText(x - this.box.width / 2 + 4, y - this.box.height / 2 + 6, 'sodapop', text);
+    this.box = scene.add.nineslice(
+      x,
+      y,
+      'dialogSlice',
+      0,
+      width + Dialog.padding.left + Dialog.padding.right,
+      height + Dialog.padding.top + Dialog.padding.bottom,
+      1,
+      1,
+      1,
+      2
+    );
+    const boxTopLeft = this.box.getTopLeft<Phaser.Math.Vector2>();
+    this.text = scene.add.bitmapText(
+      boxTopLeft.x + Dialog.padding.left,
+      boxTopLeft.y + Dialog.padding.top,
+      'sodapop',
+      text
+    );
     this.text.setTint(0xfffa9b).setMaxWidth(this.box.width - 8);
   }
 
-  setText(text: string) {
+  setText(text: string, autosize = false) {
     this.text.setText(text);
+    if (autosize) {
+      this.text.setMaxWidth(0);
+
+      const bounds = this.text.getTextBounds();
+      this.box.setSize(bounds.global.width + 8, bounds.global.height + 6);
+
+      const boxTopLeft = this.box.getTopLeft<Phaser.Math.Vector2>();
+      this.text.setPosition(boxTopLeft.x + Dialog.padding.left, boxTopLeft.y + Dialog.padding.top);
+    }
+    return this;
   }
 
   setDepth(depth: number) {
     this.box.setDepth(depth);
     this.text.setDepth(depth);
+    return this;
+  }
+
+  setVisible(visible: boolean) {
+    this.box.setVisible(visible);
+    this.text.setVisible(visible);
     return this;
   }
 
@@ -83,5 +123,33 @@ export default class Dialog {
     }
     this.setText(text);
     sound?.stop();
+  }
+
+  async animateAppear() {
+    const initialWidth = this.box.width;
+    const initialHeight = this.box.height;
+
+    const textMask = this.scene.make.graphics().fillStyle(0xffffff);
+    this.text.setMask(textMask.createGeometryMask()).setVisible(true);
+
+    this.box.setSize(3, 4).setVisible(true);
+    await asyncTween(this.scene, {
+      targets: [this.box],
+      width: initialWidth,
+      ease: steppedCubicEase(400),
+      duration: 400,
+    });
+    await asyncTween(this.scene, {
+      targets: [this.box],
+      height: initialHeight,
+      ease: steppedCubicEase(600),
+      duration: 600,
+      onUpdate: () => {
+        const topLeft = this.box.getTopLeft<Phaser.Math.Vector2>();
+        textMask.fillRect(topLeft.x, topLeft.y, this.box.width, this.box.height);
+      },
+    });
+
+    this.text.clearMask();
   }
 }
