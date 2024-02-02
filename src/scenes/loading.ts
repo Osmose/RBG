@@ -16,20 +16,49 @@ export default class LoadingScene extends BaseScene {
 
   create() {
     this.anims.create({
+      key: 'loadingWait',
+      frameRate: 10,
+      frames: this.anims.generateFrameNumbers('loadingCount', { frames: [0, 1, 2, 1] }),
+      repeat: -1,
+    });
+    this.anims.create({
+      key: 'loadingToStart',
+      frameRate: 10,
+      frames: this.anims.generateFrameNumbers('loadingCount', { frames: [3, 4, 5, 6] }),
+      repeat: 0,
+    });
+    this.anims.create({
+      key: 'loadingStartToEmpty',
+      frameRate: 10,
+      frames: this.anims.generateFrameNumbers('loadingCount', { frames: [6, 5, 4] }),
+      repeat: 0,
+    });
+    this.anims.create({
       key: 'loadingCountdown',
       frameRate: 10,
-      delay: 150,
-      frames: this.anims.generateFrameNumbers('loadingCount', { start: 1, end: 21 }),
+      frames: this.anims.generateFrameNumbers('loadingCount', {
+        frames: [8, 9, 10, 10, 11, 12, 13, 13, 14, 15, 16, 16, 17, 18, 19, 20, 21, 22, 23],
+      }),
       repeat: 0,
     });
 
-    this.loadingCount = this.add.sprite(this.cameras.main.centerX, this.cameras.main.centerY, 'loadingCount', 0);
+    this.loadingCount = this.add
+      .sprite(this.cameras.main.centerX, this.cameras.main.centerY, 'loadingCount')
+      .play('loadingWait');
 
     const battleScene = this.scene.get('battle') as BaseScene;
     asyncLoad(this, () => {
       battleScene.loadResources(this);
     }).then(async () => {
-      this.scene.run('battle');
+      await asyncAnimation(this.loadingCount, 'loadingToStart');
+      this.loadingCount.on('pointerdown', () => {
+        this.loadingCount.setFrame(7);
+      });
+      this.loadingCount.on('pointerup', async () => {
+        await asyncAnimation(this.loadingCount, 'loadingStartToEmpty');
+        this.scene.run('battle');
+      });
+      this.loadingCount.setInteractive();
     });
   }
 
