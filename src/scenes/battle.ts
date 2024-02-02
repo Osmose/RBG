@@ -26,6 +26,7 @@ import Menu, { horizontalMenuItems } from 'gate/menu';
 import Dialog from 'gate/dialog';
 import { Entries } from 'type-fest';
 import { BASE_HEIGHT, BASE_WIDTH } from 'gate/constants';
+import LoadingScene from 'gate/scenes/loading';
 
 const GRID_WIDTH = 8;
 const GRID_HEIGHT = 9;
@@ -120,6 +121,20 @@ export default class BattleScene extends BaseScene {
   soundEnemyAttack!: Phaser.Sound.BaseSound;
   soundPartyDeath!: Phaser.Sound.BaseSound;
   soundGameOver!: Phaser.Sound.BaseSound;
+  soundVictory!: Phaser.Sound.BaseSound;
+  soundBattleMusicAll!: Phaser.Sound.BaseSound;
+  soundBattleMusicRed!: Phaser.Sound.BaseSound;
+  soundBattleMusicBlue!: Phaser.Sound.BaseSound;
+  soundBattleMusicGreen!: Phaser.Sound.BaseSound;
+  soundBattleMusicRedBlue!: Phaser.Sound.BaseSound;
+  soundBattleMusicRedGreen!: Phaser.Sound.BaseSound;
+  soundBattleMusicBlueGreen!: Phaser.Sound.BaseSound;
+
+  battleMusicState = {
+    [Characters.Rojo]: true,
+    [Characters.Blue]: true,
+    [Characters.Midori]: true,
+  };
 
   // Battle logic
   battleState!: BattleState;
@@ -160,6 +175,15 @@ export default class BattleScene extends BaseScene {
     scene.load.audio('soundEnemyAttack', 'audio/enemy_attack.mp3');
     scene.load.audio('soundPartyDeath', 'audio/player_death.mp3');
     scene.load.audio('soundGameOver', 'audio/gameover.mp3');
+    scene.load.audio('soundVictory', 'audio/victory.mp3');
+
+    scene.load.audio('soundBattleMusicAll', 'audio/battle_music_all.mp3');
+    scene.load.audio('soundBattleMusicRed', 'audio/battle_music_red.mp3');
+    scene.load.audio('soundBattleMusicBlue', 'audio/battle_music_blue.mp3');
+    scene.load.audio('soundBattleMusicGreen', 'audio/battle_music_green.mp3');
+    scene.load.audio('soundBattleMusicRedBlue', 'audio/battle_music_red_blue.mp3');
+    scene.load.audio('soundBattleMusicRedGreen', 'audio/battle_music_red_green.mp3');
+    scene.load.audio('soundBattleMusicBlueGreen', 'audio/battle_music_blue_green.mp3');
   }
 
   create() {
@@ -206,6 +230,15 @@ export default class BattleScene extends BaseScene {
     this.soundEnemyAttack = this.sound.add('soundEnemyAttack');
     this.soundPartyDeath = this.sound.add('soundPartyDeath');
     this.soundGameOver = this.sound.add('soundGameOver');
+    this.soundVictory = this.sound.add('soundVictory');
+
+    this.soundBattleMusicAll = this.sound.add('soundBattleMusicAll');
+    this.soundBattleMusicRed = this.sound.add('soundBattleMusicRed');
+    this.soundBattleMusicBlue = this.sound.add('soundBattleMusicBlue');
+    this.soundBattleMusicGreen = this.sound.add('soundBattleMusicGreen');
+    this.soundBattleMusicRedBlue = this.sound.add('soundBattleMusicRedBlue');
+    this.soundBattleMusicRedGreen = this.sound.add('soundBattleMusicRedGreen');
+    this.soundBattleMusicBlueGreen = this.sound.add('soundBattleMusicBlueGreen');
 
     this.spheres = [];
     for (let y = 0; y < GRID_HEIGHT; y++) {
@@ -230,10 +263,10 @@ export default class BattleScene extends BaseScene {
     this.battleState = new BattleState(
       {
         [Characters.Rojo]: { hp: 1, maxHp: 101, atk: 70 },
-        [Characters.Blue]: { hp: 0, maxHp: 93, atk: 25 },
-        [Characters.Midori]: { hp: 0, maxHp: 123, atk: 35 },
+        [Characters.Blue]: { hp: 1, maxHp: 93, atk: 25 },
+        [Characters.Midori]: { hp: 1, maxHp: 123, atk: 35 },
       },
-      { hp: 300, maxHp: 300 }
+      { hp: 1, maxHp: 300 }
     );
 
     const pStatus = this.battleState.partyMemberStatuses;
@@ -286,6 +319,7 @@ export default class BattleScene extends BaseScene {
         solve: new SolveState(),
         turnResult: new TurnResultPhaseState(),
         gameOver: new GameOverState(),
+        victory: new VictoryState(),
       },
       [this]
     );
@@ -313,6 +347,38 @@ export default class BattleScene extends BaseScene {
       (character) => this.battleState.partyMemberStatuses[character].hp > 0
     );
   }
+
+  get soundBattleMusic() {
+    const rojo = this.battleMusicState[Characters.Rojo];
+    const blue = this.battleMusicState[Characters.Blue];
+    const midori = this.battleMusicState[Characters.Midori];
+
+    if (rojo && blue && midori) {
+      return this.soundBattleMusicAll;
+    } else if (rojo && blue) {
+      return this.soundBattleMusicRedBlue;
+    } else if (rojo && midori) {
+      return this.soundBattleMusicRedGreen;
+    } else if (blue && midori) {
+      return this.soundBattleMusicBlueGreen;
+    } else if (rojo) {
+      return this.soundBattleMusicRed;
+    } else if (blue) {
+      return this.soundBattleMusicBlue;
+    } else if (midori) {
+      return this.soundBattleMusicGreen;
+    }
+  }
+
+  battleMusicDeath(character: Characters) {
+    const currentMusic = this.soundBattleMusic as Phaser.Sound.WebAudioSound;
+    this.battleMusicState[character] = false;
+    const newMusic = this.soundBattleMusic;
+
+    const seek = currentMusic.seek;
+    currentMusic.stop();
+    newMusic?.play({ loop: true, seek });
+  }
 }
 
 interface EnemyStatus {
@@ -332,6 +398,7 @@ interface PartyActionResultAttack {
   character: Characters;
   battleAction: BattleActions.Attack;
   damage: number;
+  death: boolean;
 }
 
 interface PartyActionResultDefend {
@@ -393,7 +460,7 @@ class BattleState {
     let clearKey = false;
     for (const [character, battleAction] of Object.entries(turnInputs) as Entries<typeof turnInputs>) {
       const sphereType = CHARACTER_SPHERE_TYPES[character];
-      if (battleAction === BattleActions.Attack) {
+      if (battleAction === BattleActions.Attack && this.enemyStatus.hp > 0) {
         const damage = Math.max(
           0,
           this.partyMemberStatuses[character].atk + this.stockCounts[sphereType] + this.stockCounts[SphereType.Key]
@@ -402,9 +469,14 @@ class BattleState {
         this.stockCounts[sphereType] = 0;
         clearKey = true;
 
-        partyActionResults[character] = { character, battleAction, damage };
+        partyActionResults[character] = {
+          character,
+          battleAction: BattleActions.Attack,
+          damage,
+          death: this.enemyStatus.hp < 1,
+        };
       } else {
-        partyActionResults[character] = { character, battleAction };
+        partyActionResults[character] = { character, battleAction: BattleActions.Defend };
       }
     }
 
@@ -503,9 +575,19 @@ class Skelly {
     ]);
   }
 
-  async animateHurt() {
+  async animateHurt(death: boolean) {
     await asyncAnimation(this.sprite, 'enemySkellyHurt');
-    this.sprite.play('enemySkellyIdle');
+    if (death) {
+      await shake(this.scene, [this.sprite], ShakeAxis.X, [3, -3, -3, 3, -2, 2, -2, 1, -1, 1, -1, 1, -1, 0], 50);
+      await asyncTween(this.scene, {
+        targets: [this.sprite],
+        alpha: 0,
+        duration: 400,
+        ease: steppedCubicEase(400),
+      });
+    } else {
+      this.sprite.play('enemySkellyIdle');
+    }
   }
 
   async animateAttack(onHit?: () => void) {
@@ -571,12 +653,15 @@ class PartyMember {
       [Characters.Rojo, 'Attack', [4, 5, 6, 7, 8, 9, 10, 11, 11, 11, 12, 13, 14, 15]],
       [Characters.Rojo, 'Hurt', [16, 17, 17, 17, 18, 18, 19, 20]],
       [Characters.Rojo, 'Death', [21, 22]],
+      [Characters.Rojo, 'Victory', [4, 5, 6, 7, 8, 9, 10, 11]],
       [Characters.Blue, 'Attack', [4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]],
       [Characters.Blue, 'Hurt', [16, 17, 17, 17, 18, 18, 19, 20]],
       [Characters.Blue, 'Death', [21, 22]],
+      [Characters.Blue, 'Victory', [4, 5, 6, 7, 8, 9, 10, 11, 12, 13]],
       [Characters.Midori, 'Attack', [4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 16, 17, 17]],
       [Characters.Midori, 'Hurt', [18, 19, 19, 19, 20, 20, 21, 22]],
       [Characters.Midori, 'Death', [23, 24]],
+      [Characters.Midori, 'Victory', [4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 25]],
     ];
     for (const [character, key, frames] of partyAnims) {
       scene.anims.create({
@@ -668,6 +753,10 @@ class PartyMember {
 
   async animateDeath() {
     await asyncAnimation(this.sprite, `party[${this.character}]Death`);
+  }
+
+  async animateVictory() {
+    await asyncAnimation(this.sprite, `party[${this.character}]Victory`);
   }
 }
 
@@ -1038,6 +1127,9 @@ class StockCount {
 
 class IntroState extends State {
   async handleEntered(scene: BattleScene) {
+    scene.soundBattleMusicAll.play({ loop: true });
+    await scene.scene.get<LoadingScene>('loading').countdown();
+
     scene.blackoutMask.fillStyle(0xffffff);
     await asyncCounter(scene, {
       from: 0,
@@ -1622,12 +1714,12 @@ class TurnResultPhaseState extends State {
 
       const attackAnimations: Promise<void>[] = [];
       for (let k = 0; k < attackResults.length; k++) {
-        const { character, damage } = attackResults[k];
+        const { character, damage, death } = attackResults[k];
         attackAnimations.push(
           scene.party[character].animateAttack(() => {
             partyDamageNumbers[k].animateAppear(DamageAnimations.TO_ENEMY);
             scene.healthEnemy.animateDamage(damage, CHARACTER_COLORS[character], false);
-            scene.enemySkelly.animateHurt();
+            scene.enemySkelly.animateHurt(death);
 
             const sphereType = CHARACTER_SPHERE_TYPES[character];
             scene.stockCounts[sphereType].animateSetCount(stockCounts[sphereType]);
@@ -1643,6 +1735,10 @@ class TurnResultPhaseState extends State {
       await Promise.all(attackAnimations);
       await wait(scene, 400);
       await Promise.all(partyDamageNumbers.map((damageNumber) => damageNumber.animateDestroy()));
+    }
+
+    if (scene.battleState.isVictory) {
+      return this.transition('victory');
     }
 
     if (enemyActionResult) {
@@ -1663,6 +1759,7 @@ class TurnResultPhaseState extends State {
           const hurtAnimation = targetMember.animateHurt().then(async () => {
             if (death) {
               scene.soundPartyDeath.play();
+              scene.battleMusicDeath(target);
               targetMember.setFaded(true);
               await targetMember.animateDeath();
             }
@@ -1690,10 +1787,10 @@ class TurnResultPhaseState extends State {
       await Promise.all(enemyAttackAnimations);
       await wait(scene, 400);
       await enemyDamageNumber.animateDestroy();
-
-      scene.dialog.setText('');
-      return this.transition('startActionChoice');
     }
+
+    scene.dialog.setText('');
+    return this.transition('startActionChoice');
   }
 }
 
@@ -1715,6 +1812,46 @@ class GameOverState extends State {
 
   async handleEntered(scene: BattleScene) {
     scene.soundGameOver.play({ loop: true });
+    await asyncTween(scene, {
+      targets: [this.fadeRect],
+      alpha: 0.8,
+      duration: 500,
+    });
+    await this.dialog.animateAppear();
+  }
+}
+
+class VictoryState extends State {
+  fadeRect!: Phaser.GameObjects.Rectangle;
+  dialog!: Dialog;
+
+  init(scene: BattleScene) {
+    this.fadeRect = scene.add
+      .rectangle(scene.cameras.main.centerX, scene.cameras.main.centerY, BASE_WIDTH, BASE_HEIGHT, 0x000000, 1)
+      .setAlpha(0)
+      .setDepth(DEPTH_MODAL);
+    this.dialog = new Dialog(scene, scene.cameras.main.centerX, scene.cameras.main.centerY)
+      .setText(
+        'You won!\nThank you for playing!\n\nAnimation, Music, Concept\nGatekid\n\nProgramming, Misc\nOsmose',
+        true
+      )
+      .setVisible(false)
+      .setDepth(DEPTH_MODAL);
+    this.dialog.text.setCenterAlign();
+  }
+
+  async handleEntered(scene: BattleScene) {
+    scene.dialog.setText('');
+    await asyncTween(scene, {
+      targets: [scene.soundBattleMusic],
+      volume: 0,
+      duration: 100,
+    });
+    scene.soundVictory.play({ loop: true });
+
+    await Promise.all(scene.activeCharacters.map((character) => scene.party[character].animateVictory()));
+    await wait(scene, 300);
+
     await asyncTween(scene, {
       targets: [this.fadeRect],
       alpha: 0.8,
