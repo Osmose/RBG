@@ -19,6 +19,8 @@ import {
   relativePositionTween,
   asyncCounter,
   steppedCubicEase,
+  onPointer,
+  clamp,
 } from 'gate/util';
 import Phaser from 'phaser';
 import BaseScene from 'gate/scenes/base';
@@ -813,21 +815,16 @@ class FullScreenButton extends Phaser.GameObjects.Sprite {
     scene.add.existing(this);
 
     this.setInteractive();
-    let clicking = false;
-    this.on('pointerdown', () => {
-      this.setFrame(this.baseFrame + 1);
-      clicking = true;
-    });
-    this.on('pointerout', () => {
-      this.setFrame(this.baseFrame);
-      clicking = false;
-    });
-    this.on('pointerup', () => {
-      if (clicking) {
-        clicking = false;
+    onPointer(this, {
+      activate: () => {
+        this.setFrame(this.baseFrame + 1);
+      },
+      deactivate: () => {
         this.setFrame(this.baseFrame);
+      },
+      click: () => {
         this.scene.scale.toggleFullscreen();
-      }
+      },
     });
 
     this.scene.scale.on('enterfullscreen', () => {
@@ -1324,7 +1321,7 @@ class ActionChoiceState extends State {
     scene.actionSprites = {} as typeof scene.actionSprites;
     for (const character of scene.activeCharacters) {
       const partyMember = scene.party[character];
-      scene.actionSprites[character] = {
+      const actionSprites = {
         [BattleActions.Defend]: scene.add.sprite(
           partyMember.sprite.x - 26,
           partyMember.sprite.y + 8,
@@ -1338,6 +1335,22 @@ class ActionChoiceState extends State {
           9
         ),
       };
+
+      // Add mouse/touch handlers
+      for (const [battleAction, sprite] of Object.entries(actionSprites) as Entries<typeof actionSprites>) {
+        onPointer(sprite, {
+          hover: () => {
+            if (this.menu.cursor !== battleAction) {
+              this.menu.moveCursorTo(battleAction);
+            }
+          },
+          click: () => {
+            this.menu.select(battleAction);
+          },
+        });
+      }
+
+      scene.actionSprites[character] = actionSprites;
     }
 
     const allSprites = Object.values(scene.actionSprites).flatMap((actionMap) => Object.values(actionMap));
@@ -1369,6 +1382,7 @@ class ActionChoiceState extends State {
         } else {
           sprite.play({ key: `battleActionDisappearUnselected[${key}]`, hideOnComplete: true });
         }
+        sprite.disableInteractive();
       }
       this.partyMember.animateFaded(true);
 
@@ -1396,7 +1410,7 @@ class ActionChoiceState extends State {
     for (const action of [BattleActions.Defend, BattleActions.Attack]) {
       const sprite = scene.actionSprites[this.character][action];
       animations.push(asyncAnimation(sprite, `battleActionAppear[${action}]`));
-      sprite.setVisible(true);
+      sprite.setVisible(true).setInteractive();
       await wait(scene, 100);
     }
     await Promise.all(animations);
@@ -1428,15 +1442,25 @@ class MovePhaseState extends State {
 
   setCursorPos(x: number, y: number) {
     const topLeft = this.scene.battleSphereWindow.getTopLeft<Vector2>();
-    this.cursorX = x;
-    this.cursorY = y;
-    this.cursor.setPosition(topLeft.x + 9 + x * 14, topLeft.y + 9 + y * 14);
+    this.cursorX = clamp(0, x, 7);
+    this.cursorY = clamp(0, y, 8);
+    this.cursor.setPosition(topLeft.x + 9 + this.cursorX * 14, topLeft.y + 9 + this.cursorY * 14);
   }
 
   moveCursor(xDiff: number, yDiff: number) {
     this.scene.soundMoveCursor.play();
     this.setCursorPos(this.cursorX + xDiff, this.cursorY + yDiff);
   }
+
+  handlePointerMove = (_pointer: Phaser.Input.Pointer, localX: number, localY: number) => {
+    const gridX = Math.floor((localX - 2) / 14);
+    const gridY = Math.floor((localY - 2) / 14);
+    this.setCursorPos(gridX, gridY);
+  };
+
+  handlePointerDown = () => {
+    this.transition('swapChoice', this.cursorX, this.cursorY);
+  };
 
   handleEntered(scene: BattleScene, toX?: number, toY?: number) {
     scene.tweens.add({
@@ -1450,7 +1474,12 @@ class MovePhaseState extends State {
       this.setCursorPos(toX, toY);
     }
 
-    if (scene.keys.space.isDown) {
+    scene.battleSphereWindow
+      .setInteractive()
+      .on('pointermove', this.handlePointerMove)
+      .on('pointerdown', this.handlePointerDown);
+
+    if (scene.keys.space.isDown || scene.input.activePointer.isDown) {
       return this.transition('swapChoice', this.cursorX, this.cursorY);
     }
   }
@@ -1478,28 +1507,65 @@ class MovePhaseState extends State {
   }
 
   handleExited() {
+    this.scene.battleSphereWindow
+      .disableInteractive()
+      .off('pointermove', this.handlePointerMove)
+      .off('pointerdown', this.handlePointerDown);
     this.cursor.setVisible(false);
   }
 }
 
 class SwapChoiceState extends State {
+  scene!: BattleScene;
   fromX!: number;
   fromY!: number;
   fromSphere!: Sphere;
+
+  init(scene: BattleScene) {
+    this.scene = scene;
+  }
 
   handleEntered(scene: BattleScene, fromX: number, fromY: number) {
     this.fromX = fromX;
     this.fromY = fromY;
     this.fromSphere = scene.getSphere(fromX, fromY)!;
     this.fromSphere.select();
+
+    scene.battleSphereWindow
+      .setInteractive()
+      .on('pointerup', this.handlePointerUp)
+      .on('pointermove', this.handlePointerMove);
   }
+
+  handlePointerUp = () => {
+    this.transition('movePhase');
+  };
+
+  handlePointerMove = (_pointer: Phaser.Input.Pointer, localX: number, localY: number) => {
+    if (this.scene.input.activePointer.isDown) {
+      const gridX = clamp(0, Math.floor((localX - 2) / 14), 7);
+      const gridY = clamp(0, Math.floor((localY - 2) / 14), 8);
+      if (gridY < this.fromY && this.fromY > 0) {
+        return this.swap(Direction.Up);
+      }
+      if (gridY > this.fromY && this.fromY < GRID_HEIGHT - 1) {
+        return this.swap(Direction.Down);
+      }
+      if (gridX < this.fromX && this.fromX > 0) {
+        return this.swap(Direction.Left);
+      }
+      if (gridX > this.fromX && this.fromX < GRID_WIDTH - 1) {
+        return this.swap(Direction.Right);
+      }
+    }
+  };
 
   swap(direction: Direction) {
     return this.transition('swap', this.fromX, this.fromY, direction);
   }
 
   execute(scene: BattleScene) {
-    if (!scene.keys.space.isDown) {
+    if (!scene.keys.space.isDown && !scene.input.activePointer.isDown) {
       return this.transition('movePhase');
     }
 
@@ -1519,6 +1585,10 @@ class SwapChoiceState extends State {
 
   handleExited() {
     this.fromSphere.deselect();
+    this.scene.battleSphereWindow
+      .disableInteractive()
+      .off('pointerup', this.handlePointerUp)
+      .off('pointermove', this.handlePointerMove);
   }
 }
 

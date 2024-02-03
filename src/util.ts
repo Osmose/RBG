@@ -303,3 +303,38 @@ export function steppedCubicEase(duration: number, frameRate = 10) {
     return Phaser.Math.Easing.Cubic.Out(Phaser.Math.Easing.Stepped(v, steps));
   };
 }
+
+interface PointerEventHandlers {
+  hover?: () => unknown;
+  activate?: () => unknown;
+  deactivate?: () => unknown;
+  click?: () => unknown;
+}
+
+export function onPointer(gameObject: Phaser.GameObjects.GameObject, handlers: PointerEventHandlers) {
+  let clicking = false;
+  gameObject.on('pointerdown', () => {
+    handlers.activate?.();
+    clicking = true;
+  });
+  gameObject.on('pointerout', () => {
+    if (clicking) {
+      handlers.deactivate?.();
+    }
+    clicking = false;
+  });
+  gameObject.on('pointerup', () => {
+    if (clicking) {
+      clicking = false;
+      handlers.deactivate?.();
+      handlers.click?.();
+    }
+  });
+  gameObject.on('pointerover', () => {
+    handlers.hover?.();
+  });
+}
+
+export function clamp(min: number, value: number, max: number) {
+  return Math.max(min, Math.min(max, value));
+}

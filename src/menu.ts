@@ -51,6 +51,13 @@ export default class Menu extends Phaser.Events.EventEmitter {
     }
   }
 
+  select(key?: string) {
+    if (key && this.cursor !== key) {
+      this.moveCursorTo(key);
+    }
+    this.emit('select', this.cursor, this.currentItem());
+  }
+
   pauseInput() {
     this.inputPaused = true;
     return this;
@@ -70,7 +77,7 @@ export default class Menu extends Phaser.Events.EventEmitter {
       if (this.currentItem()?.isCancel) {
         this.emit('cancel', this.cursor);
       } else {
-        this.emit('select', this.cursor, this.currentItem());
+        this.select();
       }
       // } else if (Phaser.Input.Keyboard.JustDown(this.scene.keys.F)) {
       // this.emit('cancel', this.cursor);
