@@ -89,6 +89,7 @@ export default class BattleScene extends BaseScene {
   blackoutMask!: Phaser.GameObjects.Graphics;
   fullScreenButton!: FullScreenButton;
   byline!: Phaser.GameObjects.Image;
+  playButton!: PlayButton;
 
   // Enemies
   enemySkelly!: Skelly;
@@ -148,6 +149,7 @@ export default class BattleScene extends BaseScene {
     ActionChoiceState.preload(scene);
     Dialog.preload(scene);
     FullScreenButton.preload(scene);
+    PlayButton.preload(scene);
 
     scene.load.image('battleBorder', 'ui/battle_border.png');
     scene.load.image('battleGrid', 'ui/battle_grid.png');
@@ -187,6 +189,7 @@ export default class BattleScene extends BaseScene {
     Skelly.create(this);
     PartyMember.create(this);
     ActionChoiceState.create(this);
+    PlayButton.create(this);
 
     this.blackoutMask = this.make.graphics();
     this.cameras.main.setMask(this.blackoutMask.createGeometryMask());
@@ -224,6 +227,9 @@ export default class BattleScene extends BaseScene {
 
     this.fullScreenButton = new FullScreenButton(this, 0, 0).setDepth(DEPTH_UI);
     Align.In.TopLeft(this.fullScreenButton, this.battleBorder, -6, -8);
+
+    this.playButton = new PlayButton(this, 0, 0).setDepth(DEPTH_UI);
+    Align.In.BottomLeft(this.playButton, this.battleBorder, -8, -10);
 
     this.soundSwap = this.sound.add('swap');
     this.soundClear = this.sound.add('clear');
@@ -837,6 +843,60 @@ class FullScreenButton extends Phaser.GameObjects.Sprite {
 
   get baseFrame() {
     return this.scene.scale.isFullscreen ? 2 : 0;
+  }
+}
+
+class PlayButton extends Phaser.GameObjects.Sprite {
+  appearing = false;
+
+  static preload(scene: Phaser.Scene) {
+    scene.load.spritesheet('playButton', 'ui/play_button.png', { frameWidth: 20, frameHeight: 20 });
+  }
+
+  static create(scene: Phaser.Scene) {
+    scene.anims.create({
+      key: 'playAppear',
+      frameRate: 10,
+      frames: scene.anims.generateFrameNumbers('playButton', { start: 0, end: 8 }),
+      repeat: 0,
+    });
+  }
+
+  constructor(scene: Phaser.Scene, x: number, y: number) {
+    super(scene, x, y, 'playButton', 0);
+    scene.add.existing(this);
+
+    onPointer(this, {
+      activate: () => {
+        this.setFrame(9);
+      },
+      deactivate: () => {
+        this.setFrame(8);
+      },
+      click: () => {
+        this.emit('clickplay');
+      },
+    });
+  }
+
+  appear() {
+    if (!this.appearing) {
+      this.appearing = true;
+      this.once('animationcomplete', () => {
+        this.setInteractive();
+      });
+      this.play('playAppear');
+    }
+    return this;
+  }
+
+  disappear() {
+    if (this.appearing) {
+      this.appearing = false;
+      this.disableInteractive();
+      this.playReverse('playAppear');
+    }
+    return this;
   }
 }
 
@@ -1458,8 +1518,13 @@ class MovePhaseState extends State {
     this.setCursorPos(gridX, gridY);
   };
 
-  handlePointerDown = () => {
+  handlePointerDown = (_pointer: Phaser.Input.Pointer, localX: number, localY: number) => {
+    this.handlePointerMove(_pointer, localX, localY);
     this.transition('swapChoice', this.cursorX, this.cursorY);
+  };
+
+  handleClickPlay = () => {
+    this.transition('solve');
   };
 
   handleEntered(scene: BattleScene, toX?: number, toY?: number) {
@@ -1469,6 +1534,7 @@ class MovePhaseState extends State {
       duration: 400,
     });
     this.cursor.setVisible(true);
+    scene.playButton.appear();
 
     if (toX !== undefined && toY !== undefined) {
       this.setCursorPos(toX, toY);
@@ -1478,6 +1544,7 @@ class MovePhaseState extends State {
       .setInteractive()
       .on('pointermove', this.handlePointerMove)
       .on('pointerdown', this.handlePointerDown);
+    scene.playButton.on('clickplay', this.handleClickPlay);
 
     if (scene.keys.space.isDown || scene.input.activePointer.isDown) {
       return this.transition('swapChoice', this.cursorX, this.cursorY);
@@ -1512,6 +1579,7 @@ class MovePhaseState extends State {
       .off('pointermove', this.handlePointerMove)
       .off('pointerdown', this.handlePointerDown);
     this.cursor.setVisible(false);
+    this.scene.playButton.off('clickplay', this.handleClickPlay);
   }
 }
 
@@ -1648,6 +1716,8 @@ function findGroup(scene: BattleScene, sphere: Sphere, visited: Set<number>, gro
 
 class SolveState extends State {
   async handleEntered(scene: BattleScene) {
+    scene.playButton.disappear();
+
     // Find all matched groups
     const visited = new Set<number>();
     const groups: Sphere[][] = [];
