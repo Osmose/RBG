@@ -17,9 +17,10 @@ window.addEventListener('load', () => {
     type: Phaser.AUTO,
     height: BASE_HEIGHT,
     width: BASE_WIDTH,
-    zoom: 3,
+    scale: {
+      mode: Phaser.Scale.FIT,
+    },
     backgroundColor: '#000',
-    parent: 'game',
     render: {
       pixelArt: true,
     },

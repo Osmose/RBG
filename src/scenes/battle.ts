@@ -28,23 +28,12 @@ import { Entries } from 'type-fest';
 import { BASE_HEIGHT, BASE_WIDTH } from 'gate/constants';
 import LoadingScene from 'gate/scenes/loading';
 
+type Vector2 = Phaser.Math.Vector2;
+
+const { Align } = Phaser.Display;
+
 const GRID_WIDTH = 8;
 const GRID_HEIGHT = 9;
-
-const SPHERE_WINDOW_LEFT = 48;
-const SPHERE_WINDOW_TOP = 43;
-const SPHERE_STOCK_LEFT = 54;
-const SPHERE_STOCK_TOP = 175;
-const HEALTH_LEFT = 186;
-const HEALTH_TOP = 40;
-
-const PARTY_LEFT = 184;
-const PARTY_TOP = 65;
-const ENEMY_LEFT = 259;
-const ENEMY_TOP = 88;
-
-const DIALOG_LEFT = 178;
-const DIALOG_TOP = 175;
 
 const ALPHA_FADED = 0.6;
 const ALPHA_UNFADED = 0;
@@ -88,7 +77,7 @@ export default class BattleScene extends BaseScene {
   stateMachine!: StateMachine;
 
   // UI
-  battleBorder!: Phaser.GameObjects.Image;
+  battleBorder!: Phaser.GameObjects.NineSlice;
   battleGrid!: Phaser.GameObjects.TileSprite;
   battleSphereWindow!: Phaser.GameObjects.Image;
   battleSphereStock!: Phaser.GameObjects.Image;
@@ -97,6 +86,8 @@ export default class BattleScene extends BaseScene {
   allActionSprites!: Phaser.GameObjects.Sprite;
   dialog!: Dialog;
   blackoutMask!: Phaser.GameObjects.Graphics;
+  fullScreenButton!: FullScreenButton;
+  byline!: Phaser.GameObjects.Image;
 
   // Enemies
   enemySkelly!: Skelly;
@@ -155,11 +146,13 @@ export default class BattleScene extends BaseScene {
     HealthBar.preload(scene);
     ActionChoiceState.preload(scene);
     Dialog.preload(scene);
+    FullScreenButton.preload(scene);
 
     scene.load.image('battleBorder', 'ui/battle_border.png');
     scene.load.image('battleGrid', 'ui/battle_grid.png');
     scene.load.image('battleSphereWindow', 'ui/battle_sphere_window.png');
     scene.load.image('battleSphereStock', 'ui/color_stock.png');
+    scene.load.image('byline', 'ui/byline.png');
 
     scene.load.bitmapFont('numbers', 'ui/numbers.png', 'ui/numbers.fnt');
 
@@ -197,14 +190,24 @@ export default class BattleScene extends BaseScene {
     this.blackoutMask = this.make.graphics();
     this.cameras.main.setMask(this.blackoutMask.createGeometryMask());
 
-    this.battleGrid = this.add.tileSprite(196, 114, 326, 104, 'battleGrid').setDepth(DEPTH_BACKGROUND);
-    this.battleBorder = this.add.image(190, 120, 'battleBorder').setDepth(DEPTH_UI);
-    this.battleSphereWindow = this.add
-      .image(SPHERE_WINDOW_LEFT + 58, SPHERE_WINDOW_TOP + 65, 'battleSphereWindow')
-      .setDepth(DEPTH_UI);
-    this.battleSphereStock = this.add
-      .image(SPHERE_STOCK_LEFT + 46, SPHERE_STOCK_TOP + 16, 'battleSphereStock')
-      .setDepth(DEPTH_UI);
+    this.battleBorder = this.add.nineslice(190, 120, 'battleBorder', 0, 330, 182, 1, 1).setDepth(DEPTH_UI);
+    this.battleGrid = this.add
+      .tileSprite(
+        this.battleBorder.x + 6,
+        this.battleBorder.y + 2,
+        this.battleBorder.width + 6,
+        this.battleBorder.height - 78,
+        'battleGrid'
+      )
+      .setDepth(DEPTH_BACKGROUND);
+    this.battleSphereWindow = this.add.image(0, 0, 'battleSphereWindow').setDepth(DEPTH_UI);
+    this.battleSphereStock = this.add.image(0, 0, 'battleSphereStock').setDepth(DEPTH_UI);
+    this.byline = this.add.image(0, 0, 'byline').setDepth(DEPTH_UI);
+
+    Align.In.TopLeft(this.battleSphereWindow, this.battleBorder, -30, -7);
+    Align.To.BottomCenter(this.battleSphereStock, this.battleSphereWindow, -4, 8);
+    Align.In.TopRight(this.byline, this.battleBorder, -3, -2);
+
     this.battleSphereWindowOverlay = this.add
       .rectangle(
         this.battleSphereWindow.x,
@@ -215,6 +218,9 @@ export default class BattleScene extends BaseScene {
       )
       .setDepth(DEPTH_UI + 1)
       .setAlpha(ALPHA_FADED);
+
+    this.fullScreenButton = new FullScreenButton(this, 0, 0).setDepth(DEPTH_UI);
+    Align.In.TopLeft(this.fullScreenButton, this.battleBorder, -6, -8);
 
     this.soundSwap = this.sound.add('swap');
     this.soundClear = this.sound.add('clear');
@@ -252,60 +258,67 @@ export default class BattleScene extends BaseScene {
       this.stockCounts.push(new StockCount(this, type));
     }
 
-    this.enemySkelly = new Skelly(this, ENEMY_LEFT + 32, ENEMY_TOP + 32);
+    this.enemySkelly = new Skelly(this);
 
     this.party = {
-      [Characters.Rojo]: new PartyMember(this, Characters.Rojo, PARTY_LEFT + 32, PARTY_TOP + 16),
-      [Characters.Blue]: new PartyMember(this, Characters.Blue, PARTY_LEFT + 16, PARTY_TOP + 48),
-      [Characters.Midori]: new PartyMember(this, Characters.Midori, PARTY_LEFT + 32, PARTY_TOP + 78),
+      [Characters.Rojo]: new PartyMember(this, Characters.Rojo),
+      [Characters.Blue]: new PartyMember(this, Characters.Blue),
+      [Characters.Midori]: new PartyMember(this, Characters.Midori),
     };
 
     this.battleState = new BattleState(
       {
-        [Characters.Rojo]: { hp: 1, maxHp: 101, atk: 70 },
-        [Characters.Blue]: { hp: 1, maxHp: 93, atk: 25 },
-        [Characters.Midori]: { hp: 1, maxHp: 123, atk: 35 },
+        [Characters.Rojo]: { hp: 101, maxHp: 101, atk: 70 },
+        [Characters.Blue]: { hp: 93, maxHp: 93, atk: 25 },
+        [Characters.Midori]: { hp: 123, maxHp: 123, atk: 35 },
       },
-      { hp: 1, maxHp: 300 }
+      { hp: 500, maxHp: 500 }
+    );
+
+    const borderTopRight = this.battleBorder.getTopRight<Vector2>();
+    this.healthEnemy = new HealthBar(
+      this,
+      HealthBarType.Enemy,
+      borderTopRight.x - 39,
+      borderTopRight.y + 25,
+      this.battleState.enemyStatus.hp,
+      this.battleState.enemyStatus.maxHp
     );
 
     const pStatus = this.battleState.partyMemberStatuses;
+    const pBarX = this.healthEnemy.barFrame.x - 110;
+    const pBarY = this.healthEnemy.barFrame.y - 11;
     this.partyHealth = {
       [Characters.Rojo]: new HealthBar(
         this,
         HealthBarType.Rojo,
-        HEALTH_LEFT + 23,
-        HEALTH_TOP + 3,
+        pBarX + 6,
+        pBarY,
         pStatus[Characters.Rojo].hp,
         pStatus[Characters.Rojo].maxHp
       ),
       [Characters.Blue]: new HealthBar(
         this,
         HealthBarType.Blue,
-        HEALTH_LEFT + 20,
-        HEALTH_TOP + 14,
+        pBarX + 3,
+        pBarY + 11,
         pStatus[Characters.Blue].hp,
         pStatus[Characters.Blue].maxHp
       ),
       [Characters.Midori]: new HealthBar(
         this,
         HealthBarType.Midori,
-        HEALTH_LEFT + 17,
-        HEALTH_TOP + 25,
+        pBarX,
+        pBarY + 22,
         pStatus[Characters.Midori].hp,
         pStatus[Characters.Midori].maxHp
       ),
     };
-    this.healthEnemy = new HealthBar(
-      this,
-      HealthBarType.Enemy,
-      HEALTH_LEFT + 124,
-      HEALTH_TOP + 14,
-      this.battleState.enemyStatus.hp,
-      this.battleState.enemyStatus.maxHp
-    );
 
-    this.dialog = new Dialog(this, DIALOG_LEFT + 82, DIALOG_TOP + 16, 160, 24).setDepth(DEPTH_UI);
+    const borderBottomRight = this.battleBorder.getBottomRight<Vector2>();
+    this.dialog = new Dialog(this, borderBottomRight.x - 12 - 80, borderBottomRight.y - 8 - 12, 160, 24).setDepth(
+      DEPTH_UI
+    );
 
     this.stateMachine = new StateMachine(
       'intro',
@@ -556,10 +569,14 @@ class Skelly {
     });
   }
 
-  constructor(scene: BattleScene, x: number, y: number) {
+  constructor(scene: BattleScene) {
     this.scene = scene;
-    this.ground = scene.add.image(x + 2, y + 23, 'enemySkellyGround').setDepth(DEPTH_ENTITIES);
-    this.sprite = scene.add.sprite(x, y, 'enemySkellyIdle', 0).setDepth(DEPTH_ENTITIES);
+    this.ground = scene.add.image(0, 0, 'enemySkellyGround').setDepth(DEPTH_ENTITIES);
+    this.sprite = scene.add.sprite(0, 0, 'enemySkellyIdle', 0).setDepth(DEPTH_ENTITIES);
+
+    Align.In.RightCenter(this.sprite, scene.battleBorder, -this.sprite.width - 2);
+    Align.To.BottomCenter(this.ground, this.sprite, 3, -9);
+
     this.sprite.play('enemySkellyIdle');
   }
 
@@ -700,11 +717,25 @@ class PartyMember {
     });
   }
 
-  constructor(scene: BattleScene, character: Characters, x: number, y: number) {
+  constructor(scene: BattleScene, character: Characters) {
     this.scene = scene;
     this.character = character;
-    this.ground = scene.add.image(x - 1, y + 23, `party[${character}]Ground`).setDepth(DEPTH_ENTITIES);
-    this.sprite = scene.add.sprite(x, y, `party[${character}]`, 0).setDepth(DEPTH_ENTITIES);
+    this.ground = scene.add.image(0, 0, `party[${character}]Ground`).setDepth(DEPTH_ENTITIES);
+    this.sprite = scene.add.sprite(0, 0, `party[${character}]`, 0).setDepth(DEPTH_ENTITIES);
+
+    switch (character) {
+      case Characters.Rojo:
+        Align.To.LeftCenter(this.sprite, scene.enemySkelly.sprite, 0, -39);
+        break;
+      case Characters.Blue:
+        Align.To.LeftCenter(this.sprite, scene.enemySkelly.sprite, 24, -8);
+        break;
+      case Characters.Midori:
+        Align.To.LeftCenter(this.sprite, scene.enemySkelly.sprite, 0, 23);
+        break;
+    }
+    Align.To.BottomCenter(this.ground, this.sprite, -1, -9);
+
     this.sprite.play(`party[${character}]Idle`);
   }
 
@@ -757,6 +788,46 @@ class PartyMember {
 
   async animateVictory() {
     await asyncAnimation(this.sprite, `party[${this.character}]Victory`);
+  }
+}
+
+class FullScreenButton extends Phaser.GameObjects.Sprite {
+  static preload(scene: Phaser.Scene) {
+    scene.load.spritesheet('fullscreenButton', 'ui/fullscreen_button.png', { frameWidth: 20, frameHeight: 20 });
+  }
+
+  constructor(scene: Phaser.Scene, x: number, y: number) {
+    super(scene, x, y, 'fullscreenButton', 0);
+    scene.add.existing(this);
+
+    this.setInteractive();
+    let clicking = false;
+    this.on('pointerdown', () => {
+      this.setFrame(this.baseFrame + 1);
+      clicking = true;
+    });
+    this.on('pointerout', () => {
+      this.setFrame(this.baseFrame);
+      clicking = false;
+    });
+    this.on('pointerup', () => {
+      if (clicking) {
+        clicking = false;
+        this.setFrame(this.baseFrame);
+        this.scene.scale.toggleFullscreen();
+      }
+    });
+
+    this.scene.scale.on('enterfullscreen', () => {
+      this.setFrame(this.baseFrame);
+    });
+    this.scene.scale.on('leavefullscreen', () => {
+      this.setFrame(this.baseFrame);
+    });
+  }
+
+  get baseFrame() {
+    return this.scene.scale.isFullscreen ? 2 : 0;
   }
 }
 
@@ -1047,8 +1118,10 @@ class Sphere {
     this.gridY = gridY;
     this.index = gridX + gridY * GRID_WIDTH;
     this.type = type;
+
+    const topLeft = scene.battleSphereWindow.getTopLeft<Vector2>();
     this.sprite = scene.add
-      .sprite(gridX * 14 + SPHERE_WINDOW_LEFT + 9, gridY * 14 + SPHERE_WINDOW_TOP + 9, 'battleSpheres', type)
+      .sprite(gridX * 14 + topLeft.x + 9, gridY * 14 + topLeft.y + 9, 'battleSpheres', type)
       .setDepth(DEPTH_UI);
   }
 
@@ -1078,15 +1151,18 @@ class StockCount {
 
   constructor(scene: BattleScene, type: SphereType) {
     this.scene = scene;
-    this.bar = scene.add
-      .image(SPHERE_STOCK_LEFT + 11 + 40, SPHERE_STOCK_TOP + 4 + 6 * type, 'sphereStockBar', type)
-      .setDepth(DEPTH_UI);
-    this.mask = scene.add.rectangle(this.bar.x + 40, this.bar.y, 80, 4, 0x000000).setDepth(DEPTH_UI);
-    this.mask.setOrigin(1, 0.5);
-    this.text = scene.add
-      .bitmapText(SPHERE_STOCK_LEFT + 94, SPHERE_STOCK_TOP + 1 + 6 * type, 'numbers', '')
-      .setTint(TINT_CREAM)
-      .setDepth(DEPTH_UI);
+    this.bar = scene.add.image(0, 0, 'sphereStockBar', type).setDepth(DEPTH_UI);
+    Align.In.TopLeft(this.bar, scene.battleSphereStock, -11, -2);
+    this.bar.y += type * 6;
+
+    this.mask = scene.add
+      .rectangle(0, 0, this.bar.width, this.bar.height, 0x000000)
+      .setDepth(DEPTH_UI)
+      .setOrigin(1, 0.5);
+    Align.In.RightCenter(this.mask, this.bar);
+
+    this.text = scene.add.bitmapText(0, 0, 'numbers', '').setTint(TINT_CREAM).setDepth(DEPTH_UI);
+    Align.To.RightTop(this.text, this.bar, 3, 1);
 
     this.setCount(0);
   }
@@ -1130,19 +1206,17 @@ class IntroState extends State {
     scene.soundBattleMusicAll.play({ loop: true });
     await scene.scene.get<LoadingScene>('loading').countdown();
 
+    const topLeft = scene.battleBorder.getTopLeft<Vector2>();
+    const center = scene.battleBorder.getCenter<Vector2>();
+
     scene.blackoutMask.fillStyle(0xffffff);
     await asyncCounter(scene, {
       from: 0,
-      to: 160,
+      to: scene.battleBorder.width / 2,
       ease: steppedCubicEase(400),
       duration: 400,
       onUpdate(tween) {
-        scene.blackoutMask.fillRect(
-          scene.cameras.main.centerX - tween.getValue(),
-          scene.cameras.main.centerY - 1,
-          tween.getValue() * 2,
-          2
-        );
+        scene.blackoutMask.fillRect(center.x - tween.getValue(), center.y, tween.getValue() * 2, 2);
       },
     });
     await asyncCounter(scene, {
@@ -1151,11 +1225,15 @@ class IntroState extends State {
       ease: steppedCubicEase(600),
       duration: 600,
       onUpdate(tween) {
-        scene.blackoutMask.fillRect(0, scene.cameras.main.centerY - tween.getValue(), BASE_WIDTH, tween.getValue() * 2);
+        scene.blackoutMask.fillRect(
+          topLeft.x,
+          center.y - tween.getValue(),
+          scene.battleBorder.width,
+          tween.getValue() * 2
+        );
       },
     });
 
-    scene.cameras.main.clearMask();
     this.transition('startActionChoice');
   }
 }
@@ -1337,9 +1415,10 @@ class MovePhaseState extends State {
   }
 
   setCursorPos(x: number, y: number) {
+    const topLeft = this.scene.battleSphereWindow.getTopLeft<Vector2>();
     this.cursorX = x;
     this.cursorY = y;
-    this.cursor.setPosition(SPHERE_WINDOW_LEFT + 9 + x * 14, SPHERE_WINDOW_TOP + 9 + y * 14);
+    this.cursor.setPosition(topLeft.x + 9 + x * 14, topLeft.y + 9 + y * 14);
   }
 
   moveCursor(xDiff: number, yDiff: number) {
@@ -1707,9 +1786,16 @@ class TurnResultPhaseState extends State {
       );
 
       // Prepare damage numbers for display
+      const skellyTopLeft = scene.enemySkelly.sprite.getTopLeft<Vector2>();
       const partyDamageNumbers = attackResults.map(
         ({ character, damage }, index) =>
-          new DamageNumber(scene, damage, CHARACTER_COLORS[character], 272 - 3 * index, 82 + 11 * index)
+          new DamageNumber(
+            scene,
+            damage,
+            CHARACTER_COLORS[character],
+            skellyTopLeft.x + 16 - 3 * index,
+            skellyTopLeft.y - 4 + 11 * index
+          )
       );
 
       const attackAnimations: Promise<void>[] = [];

@@ -50,11 +50,12 @@ export default class LoadingScene extends BaseScene {
     asyncLoad(this, () => {
       battleScene.loadResources(this);
     }).then(async () => {
-      await asyncAnimation(this.loadingCount, 'loadingToStart');
+      this.loadingCount.play('loadingToStart');
       this.loadingCount.on('pointerdown', () => {
         this.loadingCount.setFrame(7);
       });
       this.loadingCount.on('pointerup', async () => {
+        this.loadingCount.disableInteractive();
         await asyncAnimation(this.loadingCount, 'loadingStartToEmpty');
         this.scene.run('battle');
       });
