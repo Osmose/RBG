@@ -25,7 +25,6 @@ import BaseScene from 'gate/scenes/base';
 import Menu, { horizontalMenuItems } from 'gate/menu';
 import Dialog from 'gate/dialog';
 import { Entries } from 'type-fest';
-import { BASE_HEIGHT, BASE_WIDTH } from 'gate/constants';
 import LoadingScene from 'gate/scenes/loading';
 
 type Vector2 = Phaser.Math.Vector2;
@@ -190,12 +189,14 @@ export default class BattleScene extends BaseScene {
     this.blackoutMask = this.make.graphics();
     this.cameras.main.setMask(this.blackoutMask.createGeometryMask());
 
-    this.battleBorder = this.add.nineslice(190, 120, 'battleBorder', 0, 330, 182, 1, 1).setDepth(DEPTH_UI);
+    this.battleBorder = this.add
+      .nineslice(this.cameras.main.centerX, this.cameras.main.centerY, 'battleBorder', 0, 330, 182, 1, 1)
+      .setDepth(DEPTH_UI);
     this.battleGrid = this.add
       .tileSprite(
-        this.battleBorder.x + 6,
+        this.battleBorder.x,
         this.battleBorder.y + 2,
-        this.battleBorder.width + 6,
+        this.battleBorder.width + 16,
         this.battleBorder.height - 78,
         'battleGrid'
       )
@@ -266,14 +267,25 @@ export default class BattleScene extends BaseScene {
       [Characters.Midori]: new PartyMember(this, Characters.Midori),
     };
 
-    this.battleState = new BattleState(
-      {
-        [Characters.Rojo]: { hp: 101, maxHp: 101, atk: 70 },
-        [Characters.Blue]: { hp: 93, maxHp: 93, atk: 25 },
-        [Characters.Midori]: { hp: 123, maxHp: 123, atk: 35 },
-      },
-      { hp: 500, maxHp: 500 }
-    );
+    if (new URL(window.location.toString()).search.includes('lowhp')) {
+      this.battleState = new BattleState(
+        {
+          [Characters.Rojo]: { hp: 1, maxHp: 101, atk: 70 },
+          [Characters.Blue]: { hp: 1, maxHp: 93, atk: 25 },
+          [Characters.Midori]: { hp: 1, maxHp: 123, atk: 35 },
+        },
+        { hp: 1, maxHp: 500 }
+      );
+    } else {
+      this.battleState = new BattleState(
+        {
+          [Characters.Rojo]: { hp: 101, maxHp: 101, atk: 70 },
+          [Characters.Blue]: { hp: 93, maxHp: 93, atk: 25 },
+          [Characters.Midori]: { hp: 123, maxHp: 123, atk: 35 },
+        },
+        { hp: 500, maxHp: 500 }
+      );
+    }
 
     const borderTopRight = this.battleBorder.getTopRight<Vector2>();
     this.healthEnemy = new HealthBar(
@@ -340,7 +352,7 @@ export default class BattleScene extends BaseScene {
 
   update(time: number, delta: number) {
     this.battleGrid.x -= pixelDiff(10, delta);
-    if (this.battleGrid.x <= 188) {
+    if (this.battleGrid.x <= this.battleBorder.x - 8) {
       this.battleGrid.x += 8;
     }
 
@@ -1886,10 +1898,17 @@ class GameOverState extends State {
 
   init(scene: BattleScene) {
     this.fadeRect = scene.add
-      .rectangle(scene.cameras.main.centerX, scene.cameras.main.centerY, BASE_WIDTH, BASE_HEIGHT, 0x000000, 1)
+      .rectangle(
+        scene.battleBorder.x,
+        scene.battleBorder.y,
+        scene.battleBorder.width,
+        scene.battleBorder.height,
+        0x000000,
+        1
+      )
       .setAlpha(0)
       .setDepth(DEPTH_MODAL);
-    this.dialog = new Dialog(scene, scene.cameras.main.centerX, scene.cameras.main.centerY)
+    this.dialog = new Dialog(scene, scene.battleBorder.x, scene.battleBorder.y)
       .setText('GAME OVER\nRefresh to try again', true)
       .setVisible(false)
       .setDepth(DEPTH_MODAL);
@@ -1913,10 +1932,17 @@ class VictoryState extends State {
 
   init(scene: BattleScene) {
     this.fadeRect = scene.add
-      .rectangle(scene.cameras.main.centerX, scene.cameras.main.centerY, BASE_WIDTH, BASE_HEIGHT, 0x000000, 1)
+      .rectangle(
+        scene.battleBorder.x,
+        scene.battleBorder.y,
+        scene.battleBorder.width,
+        scene.battleBorder.height,
+        0x000000,
+        1
+      )
       .setAlpha(0)
       .setDepth(DEPTH_MODAL);
-    this.dialog = new Dialog(scene, scene.cameras.main.centerX, scene.cameras.main.centerY)
+    this.dialog = new Dialog(scene, scene.battleBorder.x, scene.battleBorder.y)
       .setText(
         'You won!\nThank you for playing!\n\nAnimation, Music, Concept\nGatekid\n\nProgramming, Misc\nOsmose',
         true
