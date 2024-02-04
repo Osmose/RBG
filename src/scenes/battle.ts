@@ -21,6 +21,7 @@ import {
   steppedCubicEase,
   onPointer,
   clamp,
+  asyncLoad,
 } from 'gate/util';
 import Phaser from 'phaser';
 import BaseScene from 'gate/scenes/base';
@@ -122,6 +123,7 @@ export default class BattleScene extends BaseScene {
   soundBattleMusicRedBlue!: Phaser.Sound.BaseSound;
   soundBattleMusicRedGreen!: Phaser.Sound.BaseSound;
   soundBattleMusicBlueGreen!: Phaser.Sound.BaseSound;
+  soundEnemyDeath!: Phaser.Sound.BaseSound;
 
   battleMusicState = {
     [Characters.Rojo]: true,
@@ -133,6 +135,8 @@ export default class BattleScene extends BaseScene {
   battleState!: BattleState;
   currentTurnInputs!: TurnInputs;
   currentTurnResult!: TurnResult;
+
+  firstRound = true;
 
   constructor() {
     super({
@@ -172,14 +176,9 @@ export default class BattleScene extends BaseScene {
     scene.load.audio('soundPartyDeath', 'audio/player_death.mp3');
     scene.load.audio('soundGameOver', 'audio/gameover.mp3');
     scene.load.audio('soundVictory', 'audio/victory.mp3');
+    scene.load.audio('soundEnemyDeath', 'audio/enemy_death.mp3');
 
     scene.load.audio('soundBattleMusicAll', 'audio/battle_music_all.mp3');
-    scene.load.audio('soundBattleMusicRed', 'audio/battle_music_red.mp3');
-    scene.load.audio('soundBattleMusicBlue', 'audio/battle_music_blue.mp3');
-    scene.load.audio('soundBattleMusicGreen', 'audio/battle_music_green.mp3');
-    scene.load.audio('soundBattleMusicRedBlue', 'audio/battle_music_red_blue.mp3');
-    scene.load.audio('soundBattleMusicRedGreen', 'audio/battle_music_red_green.mp3');
-    scene.load.audio('soundBattleMusicBlueGreen', 'audio/battle_music_blue_green.mp3');
   }
 
   create() {
@@ -190,6 +189,23 @@ export default class BattleScene extends BaseScene {
     PartyMember.create(this);
     ActionChoiceState.create(this);
     PlayButton.create(this);
+
+    // Load variant background music async so it doesn't block starting the game.
+    asyncLoad(this, (scene) => {
+      scene.load.audio('soundBattleMusicRed', 'audio/battle_music_red.mp3');
+      scene.load.audio('soundBattleMusicBlue', 'audio/battle_music_blue.mp3');
+      scene.load.audio('soundBattleMusicGreen', 'audio/battle_music_green.mp3');
+      scene.load.audio('soundBattleMusicRedBlue', 'audio/battle_music_red_blue.mp3');
+      scene.load.audio('soundBattleMusicRedGreen', 'audio/battle_music_red_green.mp3');
+      scene.load.audio('soundBattleMusicBlueGreen', 'audio/battle_music_blue_green.mp3');
+    }).then(() => {
+      this.soundBattleMusicRed = this.sound.add('soundBattleMusicRed');
+      this.soundBattleMusicBlue = this.sound.add('soundBattleMusicBlue');
+      this.soundBattleMusicGreen = this.sound.add('soundBattleMusicGreen');
+      this.soundBattleMusicRedBlue = this.sound.add('soundBattleMusicRedBlue');
+      this.soundBattleMusicRedGreen = this.sound.add('soundBattleMusicRedGreen');
+      this.soundBattleMusicBlueGreen = this.sound.add('soundBattleMusicBlueGreen');
+    });
 
     this.blackoutMask = this.make.graphics();
     this.cameras.main.setMask(this.blackoutMask.createGeometryMask());
@@ -246,14 +262,9 @@ export default class BattleScene extends BaseScene {
     this.soundPartyDeath = this.sound.add('soundPartyDeath');
     this.soundGameOver = this.sound.add('soundGameOver');
     this.soundVictory = this.sound.add('soundVictory');
+    this.soundEnemyDeath = this.sound.add('soundEnemyDeath');
 
     this.soundBattleMusicAll = this.sound.add('soundBattleMusicAll');
-    this.soundBattleMusicRed = this.sound.add('soundBattleMusicRed');
-    this.soundBattleMusicBlue = this.sound.add('soundBattleMusicBlue');
-    this.soundBattleMusicGreen = this.sound.add('soundBattleMusicGreen');
-    this.soundBattleMusicRedBlue = this.sound.add('soundBattleMusicRedBlue');
-    this.soundBattleMusicRedGreen = this.sound.add('soundBattleMusicRedGreen');
-    this.soundBattleMusicBlueGreen = this.sound.add('soundBattleMusicBlueGreen');
 
     this.spheres = [];
     for (let y = 0; y < GRID_HEIGHT; y++) {
@@ -336,9 +347,11 @@ export default class BattleScene extends BaseScene {
     };
 
     const borderBottomRight = this.battleBorder.getBottomRight<Vector2>();
-    this.dialog = new Dialog(this, borderBottomRight.x - 12 - 80, borderBottomRight.y - 8 - 12, 160, 24).setDepth(
-      DEPTH_UI
-    );
+    this.dialog = new Dialog(this, borderBottomRight.x - 12 - 80, borderBottomRight.y - 8 - 12, {
+      width: 160,
+      height: 24,
+      sound: this.soundText,
+    }).setDepth(DEPTH_UI);
 
     this.stateMachine = new StateMachine(
       'intro',
@@ -346,6 +359,7 @@ export default class BattleScene extends BaseScene {
         intro: new IntroState(),
         startActionChoice: new StartActionChoiceState(),
         actionChoice: new ActionChoiceState(),
+        startMovePhase: new StartMovePhaseState(),
         movePhase: new MovePhaseState(),
         swapChoice: new SwapChoiceState(),
         swap: new SwapState(),
@@ -523,7 +537,7 @@ class BattleState {
         Object.values(Characters).filter((character) => this.partyMemberStatuses[character].hp > 0)
       );
 
-      let damage = Math.floor(Math.random() * 15) + 20;
+      let damage = Math.floor(Math.random() * 25) + 30;
       if (turnInputs[target] === BattleActions.Defend) {
         const sphereType = CHARACTER_SPHERE_TYPES[target];
         damage -= this.stockCounts[sphereType] + this.stockCounts[SphereType.Yellow];
@@ -615,6 +629,8 @@ class Skelly {
   async animateHurt(death: boolean) {
     await asyncAnimation(this.sprite, 'enemySkellyHurt');
     if (death) {
+      this.scene.soundBattleMusic?.stop();
+      this.scene.soundEnemyDeath.play();
       await shake(this.scene, [this.sprite], ShakeAxis.X, [3, -3, -3, 3, -2, 2, -2, 1, -1, 1, -1, 1, -1, 0], 50);
       await asyncTween(this.scene, {
         targets: [this.sprite],
@@ -1319,6 +1335,10 @@ class StartActionChoiceState extends State {
       return this.transition('gameOver');
     }
 
+    if (scene.firstRound) {
+      scene.dialog.animateScript('-Press action or use \n  arrows and spacebar.');
+    }
+
     this.transition('actionChoice', 0);
   }
 }
@@ -1449,7 +1469,7 @@ class ActionChoiceState extends State {
       if (this.characterIndex < scene.activeCharacters.length - 1) {
         this.transition('actionChoice', this.characterIndex + 1);
       } else {
-        this.transition('movePhase');
+        this.transition('startMovePhase');
       }
     });
   }
@@ -1481,6 +1501,27 @@ class ActionChoiceState extends State {
 
   execute() {
     this.menu.update();
+  }
+}
+
+class StartMovePhaseState extends State {
+  async handleEntered(scene: BattleScene) {
+    scene.tweens.add({
+      targets: [scene.battleSphereWindowOverlay],
+      alpha: ALPHA_UNFADED,
+      duration: 400,
+    });
+    scene.playButton.appear();
+
+    if (scene.firstRound) {
+      scene.dialog.animateScript([
+        '-Match 3 or more\n  to buff actions.<delay>',
+        '-Click and drag or hold\n  space to move sphere.<delay>',
+        '-Press Play button or\n  Shift to continue.',
+      ]);
+    }
+
+    return this.transition('movePhase');
   }
 }
 
@@ -1528,13 +1569,7 @@ class MovePhaseState extends State {
   };
 
   handleEntered(scene: BattleScene, toX?: number, toY?: number) {
-    scene.tweens.add({
-      targets: [scene.battleSphereWindowOverlay],
-      alpha: ALPHA_UNFADED,
-      duration: 400,
-    });
     this.cursor.setVisible(true);
-    scene.playButton.appear();
 
     if (toX !== undefined && toY !== undefined) {
       this.setCursorPos(toX, toY);
@@ -1717,6 +1752,7 @@ function findGroup(scene: BattleScene, sphere: Sphere, visited: Set<number>, gro
 class SolveState extends State {
   async handleEntered(scene: BattleScene) {
     scene.playButton.disappear();
+    scene.dialog.setText('');
 
     // Find all matched groups
     const visited = new Set<number>();
@@ -1742,7 +1778,7 @@ class SolveState extends State {
     // If no matches, exit early
     if (matchGroups.flat().length < 1) {
       // TODO: Add bad sound to indicate no matches
-      return this.transition('movePhase');
+      return this.transition('turnResult');
     }
 
     // Update the battle state first before animations
@@ -1929,8 +1965,11 @@ class TurnResultPhaseState extends State {
       scene.battleState.executeTurn(scene.currentTurnInputs));
 
     // Animate attacks, if needed
-    if (Object.values(partyActionResults).some((result) => result?.battleAction === BattleActions.Attack)) {
-      await scene.dialog.animateScript('-Attack!', 75, scene.soundText);
+    const partyAttacked = Object.values(partyActionResults).some(
+      (result) => result?.battleAction === BattleActions.Attack
+    );
+    if (partyAttacked) {
+      await scene.dialog.animateScript('-Attack!');
       await wait(scene, 100);
 
       const attackResults = Object.values(partyActionResults).filter(
@@ -1981,7 +2020,11 @@ class TurnResultPhaseState extends State {
 
     if (enemyActionResult) {
       const { target, damage, death } = enemyActionResult;
-      await scene.dialog.animateScript('-The <red>Enemy</red> strikes\n  back!', 75, scene.soundText);
+      if (partyAttacked) {
+        await scene.dialog.animateScript('-The <red>Enemy</red> strikes\n  back!');
+      } else {
+        await scene.dialog.animateScript('-The <red>Enemy</red> attacks!');
+      }
 
       const targetMember = scene.party[target];
       const enemyDamageNumber = new DamageNumber(
@@ -2028,6 +2071,7 @@ class TurnResultPhaseState extends State {
     }
 
     scene.dialog.setText('');
+    scene.firstRound = false;
     return this.transition('startActionChoice');
   }
 }

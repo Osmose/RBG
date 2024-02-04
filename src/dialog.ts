@@ -7,10 +7,37 @@ interface ScriptTint {
   length: number;
 }
 
+enum ScriptActionType {
+  ShowText = 'showText',
+  Delay = 'delay',
+}
+
+type ScriptAction =
+  | {
+      type: ScriptActionType.ShowText;
+      tints: ScriptTint[];
+      text: string;
+    }
+  | {
+      type: ScriptActionType.Delay;
+      duration: number;
+    };
+
+export interface DialogOptions {
+  width?: number;
+  height?: number;
+  text?: string;
+  characterDelay?: number;
+  sound?: Phaser.Sound.BaseSound;
+}
+
 export default class Dialog {
   scene: BaseScene;
   box: Phaser.GameObjects.NineSlice;
   text: Phaser.GameObjects.BitmapText;
+  characterDelay: number;
+  sound?: Phaser.Sound.BaseSound;
+  abortController?: AbortController;
 
   static padding = {
     top: 8,
@@ -24,8 +51,16 @@ export default class Dialog {
     scene.load.image('dialogSlice', 'ui/dialog_slice.png');
   }
 
-  constructor(scene: BaseScene, x: number, y: number, width = 10, height = 10, text?: string) {
+  constructor(
+    scene: BaseScene,
+    x: number,
+    y: number,
+    { width = 10, height = 10, text, characterDelay = 75, sound }: DialogOptions = {}
+  ) {
     this.scene = scene;
+    this.characterDelay = characterDelay;
+    this.sound = sound;
+
     this.box = scene.add.nineslice(
       x,
       y,
@@ -49,6 +84,8 @@ export default class Dialog {
   }
 
   setText(text: string, autosize = false) {
+    this.abortController?.abort();
+
     this.text.setText(text);
     if (autosize) {
       this.text.setMaxWidth(0);
@@ -76,9 +113,10 @@ export default class Dialog {
 
   loadScript(script: string) {
     const scriptParts = script.split(/(<\/?[A-Za-z]+>)/);
-    const tints: ScriptTint[] = [];
+    let tints: ScriptTint[] = [];
     let currentTint: ScriptTint | null = null;
     let text = '';
+    const actions: ScriptAction[] = [];
 
     for (const scriptPart of scriptParts) {
       switch (scriptPart.toLowerCase()) {
@@ -94,35 +132,82 @@ export default class Dialog {
           currentTint.length = text.length - currentTint.start;
           currentTint = null;
           break;
+        case '<delay>':
+          actions.push({ type: ScriptActionType.ShowText, tints, text });
+          actions.push({ type: ScriptActionType.Delay, duration: 3000 });
+          tints = [];
+          text = '';
+          break;
         default:
           text += scriptPart;
           break;
       }
     }
 
-    return { text, tints };
+    if (text !== '') {
+      actions.push({ type: ScriptActionType.ShowText, tints, text });
+    }
+
+    return actions;
   }
 
-  async animateScript(script: string, step: number, sound?: Phaser.Sound.BaseSound) {
-    const { text, tints } = this.loadScript(script);
+  async animateScript(script: string | string[]) {
+    this.abortController?.abort();
+    this.abortController = new AbortController();
 
-    // setCharacterTint limits tinting to the current text length, so we set the
-    // text temporarily to its final value. The tint data is preserved even
-    // after we set the text to be empty again.
-    this.text.setVisible(false).setText(text);
-    this.text.setCharacterTint(0, -1);
-    for (const { color, start, length } of tints) {
-      this.text.setCharacterTint(start, length, true, color);
-    }
-    this.text.setText('').setVisible(true);
+    let aborted = false;
+    const abortHandler = () => {
+      aborted = true;
+      this.sound?.stop();
+      this.abortController!.signal.removeEventListener('abort', abortHandler);
+    };
+    this.abortController.signal.addEventListener('abort', abortHandler);
 
-    sound?.play({ loop: true });
-    for (let k = 0; k < text.length; k++) {
-      this.setText(text.slice(0, k));
-      await wait(this.scene, step);
+    let joinedScript = '';
+    if (Array.isArray(script)) {
+      joinedScript = script.join('');
+    } else {
+      joinedScript = script;
     }
-    this.setText(text);
-    sound?.stop();
+
+    const actions = this.loadScript(joinedScript);
+    for (const action of actions) {
+      if (aborted) {
+        break;
+      }
+
+      switch (action.type) {
+        case ScriptActionType.ShowText: {
+          const { text, tints } = action;
+
+          // setCharacterTint limits tinting to the current text length, so we set the
+          // text temporarily to its final value. The tint data is preserved even
+          // after we set the text to be empty again.
+          this.text.setVisible(false).setText(text);
+          this.text.setCharacterTint(0, -1);
+          for (const { color, start, length } of tints) {
+            this.text.setCharacterTint(start, length, true, color);
+          }
+          this.text.setText('').setVisible(true);
+
+          this.sound?.play({ loop: true });
+          for (let k = 0; k < text.length && !aborted; k++) {
+            this.text.setText(text.slice(0, k));
+            await wait(this.scene, this.characterDelay);
+          }
+
+          if (!aborted) {
+            this.sound?.stop();
+            this.text.setText(text);
+          }
+          break;
+        }
+        case ScriptActionType.Delay: {
+          await wait(this.scene, action.duration);
+          break;
+        }
+      }
+    }
   }
 
   async animateAppear() {
