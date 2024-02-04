@@ -368,8 +368,8 @@ export default class BattleScene extends BaseScene {
         swap: new SwapState(),
         solve: new SolveState(),
         turnResult: new TurnResultPhaseState(),
-        gameOver: new EndState('GAME OVER\nRefresh to try again', this.soundGameOver),
-        victory: new EndState('You won!\nThank you for playing!', this.soundVictory),
+        gameOver: new EndState('GAME OVER\nRefresh to try again', this.soundGameOver, 'EndGameOver'),
+        victory: new EndState('You won!\nThank you for playing!', this.soundVictory, 'EndVictory'),
       },
       [this]
     );
@@ -2153,6 +2153,7 @@ class EndState extends State {
   message: string;
   music: Phaser.Sound.BaseSound;
   endCards!: EndCard[];
+  analyticsEndType: string;
 
   static preload(scene: BaseScene) {
     scene.load.image('portraitOsmose', 'ui/osmose.png');
@@ -2160,10 +2161,11 @@ class EndState extends State {
     scene.load.image('portraitGithub', 'ui/github.png');
   }
 
-  constructor(message: string, music: Phaser.Sound.BaseSound) {
+  constructor(message: string, music: Phaser.Sound.BaseSound, analyticsEndType: string) {
     super();
     this.message = message;
     this.music = music;
+    this.analyticsEndType = analyticsEndType;
   }
 
   init(scene: BattleScene) {
@@ -2217,6 +2219,8 @@ class EndState extends State {
   }
 
   async handleEntered(scene: BattleScene) {
+    window.plausible(this.analyticsEndType);
+
     scene.dialog.setText('');
     await asyncTween(scene, {
       targets: [scene.soundBattleMusic],
