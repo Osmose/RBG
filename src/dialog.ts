@@ -1,6 +1,10 @@
 import BaseScene from 'gate/scenes/base';
 import { asyncTween, steppedCubicEase, wait } from 'gate/util';
 
+const TINT_RED = 0xac311e;
+const TINT_BLUE = 0x63a09b;
+const TINT_GREEN = 0x5ad932;
+
 interface ScriptTint {
   color: number;
   start: number;
@@ -12,16 +16,18 @@ enum ScriptActionType {
   Delay = 'delay',
 }
 
-type ScriptAction =
-  | {
-      type: ScriptActionType.ShowText;
-      tints: ScriptTint[];
-      text: string;
-    }
-  | {
-      type: ScriptActionType.Delay;
-      duration: number;
-    };
+type ShowTextAction = {
+  type: ScriptActionType.ShowText;
+  tints: ScriptTint[];
+  text: string;
+};
+
+type DelayAction = {
+  type: ScriptActionType.Delay;
+  duration: number;
+};
+
+type ScriptAction = ShowTextAction | DelayAction;
 
 export interface DialogOptions {
   width?: number;
@@ -78,15 +84,32 @@ export default class Dialog {
       boxTopLeft.x + Dialog.padding.left,
       boxTopLeft.y + Dialog.padding.top,
       'sodapop',
-      text
+      ''
     );
     this.text.setTint(0xfffa9b).setMaxWidth(this.box.width - 8);
+
+    if (text) {
+      this.setText(text);
+    }
   }
 
   setText(text: string, autosize = false) {
     this.abortController?.abort();
 
-    this.text.setText(text);
+    const actions = this.loadScript(text);
+    const lastTextAction = actions.findLast(
+      (action): action is ShowTextAction => action.type === ScriptActionType.ShowText
+    );
+    if (!lastTextAction) {
+      throw new Error('Could not parse text from script');
+    }
+
+    this.text.setText(lastTextAction.text);
+    this.text.setCharacterTint(0, -1);
+    for (const { color, start, length } of lastTextAction.tints) {
+      this.text.setCharacterTint(start, length, true, color);
+    }
+
     if (autosize) {
       this.text.setMaxWidth(0);
 
@@ -121,12 +144,36 @@ export default class Dialog {
     for (const scriptPart of scriptParts) {
       switch (scriptPart.toLowerCase()) {
         case '<red>':
-          currentTint = { color: 0xac311e, start: text.length, length: -1 };
+          currentTint = { color: TINT_RED, start: text.length, length: -1 };
           tints.push(currentTint);
           break;
         case '</red>':
           if (!currentTint) {
             throw new Error('Encountered </red> before <red> in dialog script.');
+          }
+
+          currentTint.length = text.length - currentTint.start;
+          currentTint = null;
+          break;
+        case '<green>':
+          currentTint = { color: TINT_GREEN, start: text.length, length: -1 };
+          tints.push(currentTint);
+          break;
+        case '</green>':
+          if (!currentTint) {
+            throw new Error('Encountered </green> before <green> in dialog script.');
+          }
+
+          currentTint.length = text.length - currentTint.start;
+          currentTint = null;
+          break;
+        case '<blue>':
+          currentTint = { color: TINT_BLUE, start: text.length, length: -1 };
+          tints.push(currentTint);
+          break;
+        case '</blue>':
+          if (!currentTint) {
+            throw new Error('Encountered </blue> before <blue> in dialog script.');
           }
 
           currentTint.length = text.length - currentTint.start;
@@ -144,7 +191,7 @@ export default class Dialog {
       }
     }
 
-    if (text !== '') {
+    if (text !== '' || actions.length === 0) {
       actions.push({ type: ScriptActionType.ShowText, tints, text });
     }
 

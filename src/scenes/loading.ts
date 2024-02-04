@@ -59,7 +59,7 @@ export default class LoadingScene extends BaseScene {
         await asyncAnimation(this.loadingCount, 'loadingStartToEmpty');
         this.scene.run('battle');
       });
-      this.loadingCount.setInteractive();
+      this.loadingCount.setInteractive({ useHandCursor: true });
     });
   }
 

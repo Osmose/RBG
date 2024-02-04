@@ -48,6 +48,8 @@ const DEPTH_MODAL = 20;
 const TINT_CREAM = 0xfffa9b;
 const TINT_YELLOW = 0xfff55e;
 const TINT_RED = 0xac311e;
+const TINT_BLUE = 0x63a09b;
+const TINT_GREEN = 0x5ad932;
 
 enum Characters {
   Rojo = 'rojo',
@@ -154,6 +156,7 @@ export default class BattleScene extends BaseScene {
     Dialog.preload(scene);
     FullScreenButton.preload(scene);
     PlayButton.preload(scene);
+    EndState.preload(scene);
 
     scene.load.image('battleBorder', 'ui/battle_border.png');
     scene.load.image('battleGrid', 'ui/battle_grid.png');
@@ -365,8 +368,8 @@ export default class BattleScene extends BaseScene {
         swap: new SwapState(),
         solve: new SolveState(),
         turnResult: new TurnResultPhaseState(),
-        gameOver: new GameOverState(),
-        victory: new VictoryState(),
+        gameOver: new EndState('GAME OVER\nRefresh to try again', this.soundGameOver),
+        victory: new EndState('You won!\nThank you for playing!', this.soundVictory),
       },
       [this]
     );
@@ -836,7 +839,7 @@ class FullScreenButton extends Phaser.GameObjects.Sprite {
     super(scene, x, y, 'fullscreenButton', 0);
     scene.add.existing(this);
 
-    this.setInteractive();
+    this.setInteractive({ useHandCursor: true });
     onPointer(this, {
       activate: () => {
         this.setFrame(this.baseFrame + 1);
@@ -899,7 +902,7 @@ class PlayButton extends Phaser.GameObjects.Sprite {
     if (!this.appearing) {
       this.appearing = true;
       this.once('animationcomplete', () => {
-        this.setInteractive();
+        this.setInteractive({ useHandCursor: true });
       });
       this.play('playAppear');
     }
@@ -1490,7 +1493,7 @@ class ActionChoiceState extends State {
     for (const action of [BattleActions.Defend, BattleActions.Attack]) {
       const sprite = scene.actionSprites[this.character][action];
       animations.push(asyncAnimation(sprite, `battleActionAppear[${action}]`));
-      sprite.setVisible(true).setInteractive();
+      sprite.setVisible(true).setInteractive({ useHandCursor: true });
       await wait(scene, 100);
     }
     await Promise.all(animations);
@@ -1576,7 +1579,7 @@ class MovePhaseState extends State {
     }
 
     scene.battleSphereWindow
-      .setInteractive()
+      .setInteractive({ useHandCursor: true })
       .on('pointermove', this.handlePointerMove)
       .on('pointerdown', this.handlePointerDown);
     scene.playButton.on('clickplay', this.handleClickPlay);
@@ -1635,7 +1638,7 @@ class SwapChoiceState extends State {
     this.fromSphere.select();
 
     scene.battleSphereWindow
-      .setInteractive()
+      .setInteractive({ useHandCursor: true })
       .on('pointerup', this.handlePointerUp)
       .on('pointermove', this.handlePointerMove);
   }
@@ -2076,43 +2079,92 @@ class TurnResultPhaseState extends State {
   }
 }
 
-class GameOverState extends State {
-  fadeRect!: Phaser.GameObjects.Rectangle;
-  dialog!: Dialog;
+class EndCard {
+  scene: BaseScene;
+  box: Phaser.GameObjects.NineSlice;
+  text: Phaser.GameObjects.BitmapText;
+  portrait: Phaser.GameObjects.Image;
 
-  init(scene: BattleScene) {
-    this.fadeRect = scene.add
-      .rectangle(
-        scene.battleBorder.x,
-        scene.battleBorder.y,
-        scene.battleBorder.width,
-        scene.battleBorder.height,
-        0x000000,
-        1
-      )
-      .setAlpha(0)
-      .setDepth(DEPTH_MODAL);
-    this.dialog = new Dialog(scene, scene.battleBorder.x, scene.battleBorder.y)
-      .setText('GAME OVER\nRefresh to try again', true)
+  constructor(scene: BaseScene, x: number, y: number, portrait: string, text: string, color: number, href: string) {
+    this.scene = scene;
+    this.box = scene.add.nineslice(x, y, 'dialogSlice', 0, 105, 46, 1, 1, 1, 2).setDepth(DEPTH_MODAL).setVisible(false);
+
+    onPointer(this.box, {
+      activate: () => {
+        window.open(href, '_blank');
+      },
+    });
+
+    const boxTopLeft = this.box.getTopLeft<Vector2>();
+    this.text = scene.add
+      .bitmapText(boxTopLeft.x + 36, boxTopLeft.y + 8, 'sodapop', text)
+      .setTint(TINT_CREAM)
+      .setMaxWidth(this.box.width - 28)
+      .setDepth(DEPTH_MODAL)
       .setVisible(false)
-      .setDepth(DEPTH_MODAL);
-    this.dialog.text.setCenterAlign();
+      .setCharacterTint(0, text.indexOf('\n'), true, color);
+    this.portrait = scene.add
+      .image(boxTopLeft.x + 18, boxTopLeft.y + 22, portrait)
+      .setDepth(DEPTH_MODAL)
+      .setVisible(false);
   }
 
-  async handleEntered(scene: BattleScene) {
-    scene.soundGameOver.play({ loop: true });
-    await asyncTween(scene, {
-      targets: [this.fadeRect],
-      alpha: 0.8,
-      duration: 500,
+  async animateAppear() {
+    const initialWidth = this.box.width;
+    const initialHeight = this.box.height;
+
+    const textMask = this.scene.make.graphics().fillStyle(0xffffff);
+    this.text.setMask(textMask.createGeometryMask()).setVisible(true);
+    this.portrait.setMask(textMask.createGeometryMask()).setVisible(true);
+
+    this.box.setSize(3, 4).setVisible(true);
+    await asyncTween(this.scene, {
+      targets: [this.box],
+      width: initialWidth,
+      ease: steppedCubicEase(400),
+      duration: 400,
     });
-    await this.dialog.animateAppear();
+    await asyncTween(this.scene, {
+      targets: [this.box],
+      height: initialHeight,
+      ease: steppedCubicEase(600),
+      duration: 600,
+      onUpdate: () => {
+        const topLeft = this.box.getTopLeft<Phaser.Math.Vector2>();
+        textMask.fillRect(topLeft.x, topLeft.y + 1, this.box.width, this.box.height - 3);
+      },
+    });
+
+    this.box.setInteractive({
+      useHandCursor: true,
+      hitArea: new Phaser.Geom.Rectangle(0, 0, this.box.width, this.box.height),
+      callback: Phaser.Geom.Rectangle.Contains,
+    });
+
+    this.text.clearMask();
+    this.portrait.clearMask();
   }
 }
 
-class VictoryState extends State {
+class EndState extends State {
   fadeRect!: Phaser.GameObjects.Rectangle;
   dialog!: Dialog;
+  osmoseDialog!: Dialog;
+  message: string;
+  music: Phaser.Sound.BaseSound;
+  endCards!: EndCard[];
+
+  static preload(scene: BaseScene) {
+    scene.load.image('portraitOsmose', 'ui/osmose.png');
+    scene.load.image('portraitGatekid', 'ui/gatekid.png');
+    scene.load.image('portraitGithub', 'ui/github.png');
+  }
+
+  constructor(message: string, music: Phaser.Sound.BaseSound) {
+    super();
+    this.message = message;
+    this.music = music;
+  }
 
   init(scene: BattleScene) {
     this.fadeRect = scene.add
@@ -2127,13 +2179,41 @@ class VictoryState extends State {
       .setAlpha(0)
       .setDepth(DEPTH_MODAL);
     this.dialog = new Dialog(scene, scene.battleBorder.x, scene.battleBorder.y)
-      .setText(
-        'You won!\nThank you for playing!\n\nAnimation, Music, Concept\nGatekid\n\nProgramming, Misc\nOsmose',
-        true
-      )
+      .setText(this.message, true)
       .setVisible(false)
       .setDepth(DEPTH_MODAL);
     this.dialog.text.setCenterAlign();
+
+    const bottomLeft = scene.battleBorder.getBottomLeft<Vector2>();
+    this.endCards = [
+      new EndCard(
+        scene,
+        bottomLeft.x + 57,
+        bottomLeft.y - 26,
+        'portraitGatekid',
+        'Gatekid3\nArt/Music\nConcept',
+        TINT_RED,
+        'https://ko-fi.com/gatekid3'
+      ),
+      new EndCard(
+        scene,
+        bottomLeft.x + 164,
+        bottomLeft.y - 26,
+        'portraitOsmose',
+        'Osmose\nCoding\nMisc',
+        TINT_BLUE,
+        'https://www.mkelly.me/'
+      ),
+      new EndCard(
+        scene,
+        bottomLeft.x + 271,
+        bottomLeft.y - 26,
+        'portraitGithub',
+        'Source\navailable\non Github',
+        TINT_GREEN,
+        'https://github.com/Osmose/RBG'
+      ),
+    ];
   }
 
   async handleEntered(scene: BattleScene) {
@@ -2143,7 +2223,7 @@ class VictoryState extends State {
       volume: 0,
       duration: 100,
     });
-    scene.soundVictory.play({ loop: true });
+    this.music.play({ loop: true });
 
     await Promise.all(scene.activeCharacters.map((character) => scene.party[character].animateVictory()));
     await wait(scene, 300);
@@ -2153,6 +2233,11 @@ class VictoryState extends State {
       alpha: 0.8,
       duration: 500,
     });
-    await this.dialog.animateAppear();
+
+    this.dialog.animateAppear();
+    for (const endCard of this.endCards) {
+      await wait(scene, 300);
+      endCard.animateAppear();
+    }
   }
 }
