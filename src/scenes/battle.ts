@@ -202,12 +202,24 @@ export default class BattleScene extends BaseScene {
       scene.load.audio('soundBattleMusicRedGreen', 'audio/battle_music_red_green.mp3');
       scene.load.audio('soundBattleMusicBlueGreen', 'audio/battle_music_blue_green.mp3');
     }).then(() => {
-      this.soundBattleMusicRed = this.sound.add('soundBattleMusicRed');
-      this.soundBattleMusicBlue = this.sound.add('soundBattleMusicBlue');
-      this.soundBattleMusicGreen = this.sound.add('soundBattleMusicGreen');
-      this.soundBattleMusicRedBlue = this.sound.add('soundBattleMusicRedBlue');
-      this.soundBattleMusicRedGreen = this.sound.add('soundBattleMusicRedGreen');
-      this.soundBattleMusicBlueGreen = this.sound.add('soundBattleMusicBlueGreen');
+      this.soundBattleMusicRed = this.sound.add('soundBattleMusicRed').on('complete', () => {
+        this.soundBattleMusicAll.play({ seek: 1.683 });
+      });
+      this.soundBattleMusicBlue = this.sound.add('soundBattleMusicBlue').on('complete', () => {
+        this.soundBattleMusicBlue.play({ seek: 1.683 });
+      });
+      this.soundBattleMusicGreen = this.sound.add('soundBattleMusicGreen').on('complete', () => {
+        this.soundBattleMusicGreen.play({ seek: 1.683 });
+      });
+      this.soundBattleMusicRedBlue = this.sound.add('soundBattleMusicRedBlue').on('complete', () => {
+        this.soundBattleMusicRedBlue.play({ seek: 1.683 });
+      });
+      this.soundBattleMusicRedGreen = this.sound.add('soundBattleMusicRedGreen').on('complete', () => {
+        this.soundBattleMusicRedGreen.play({ seek: 1.683 });
+      });
+      this.soundBattleMusicBlueGreen = this.sound.add('soundBattleMusicBlueGreen').on('complete', () => {
+        this.soundBattleMusicBlueGreen.play({ seek: 1.683 });
+      });
     });
 
     this.blackoutMask = this.make.graphics();
@@ -263,11 +275,13 @@ export default class BattleScene extends BaseScene {
     };
     this.soundEnemyAttack = this.sound.add('soundEnemyAttack');
     this.soundPartyDeath = this.sound.add('soundPartyDeath');
-    this.soundGameOver = this.sound.add('soundGameOver');
-    this.soundVictory = this.sound.add('soundVictory');
+    this.soundGameOver = this.sound.add('soundGameOver', { loop: true });
+    this.soundVictory = this.sound.add('soundVictory', { loop: true });
     this.soundEnemyDeath = this.sound.add('soundEnemyDeath');
 
-    this.soundBattleMusicAll = this.sound.add('soundBattleMusicAll');
+    this.soundBattleMusicAll = this.sound.add('soundBattleMusicAll').on('complete', () => {
+      this.soundBattleMusicAll.play({ seek: 1.683 });
+    });
 
     this.spheres = [];
     for (let y = 0; y < GRID_HEIGHT; y++) {
@@ -427,7 +441,7 @@ export default class BattleScene extends BaseScene {
 
     const seek = currentMusic.seek;
     currentMusic.stop();
-    newMusic?.play({ loop: true, seek });
+    newMusic?.play({ seek });
   }
 }
 
@@ -1291,7 +1305,7 @@ class StockCount {
 
 class IntroState extends State {
   async handleEntered(scene: BattleScene) {
-    scene.soundBattleMusicAll.play({ loop: true });
+    scene.soundBattleMusicAll.play();
     await scene.scene.get<LoadingScene>('loading').countdown();
 
     const topLeft = scene.battleBorder.getTopLeft<Vector2>();
@@ -2227,7 +2241,7 @@ class EndState extends State {
       volume: 0,
       duration: 100,
     });
-    this.music.play({ loop: true });
+    this.music.play();
 
     await Promise.all(scene.activeCharacters.map((character) => scene.party[character].animateVictory()));
     await wait(scene, 300);
